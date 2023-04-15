@@ -8,12 +8,15 @@
         <script>
             const maxComicNum = 2500; // The highest XKCD comic number available
             const randomComicNum = Math.floor(Math.random() * maxComicNum) + 1;
-            const randomComicUrl = `https://xkcd.com/${randomComicNum}/info.0.json`;
-            fetch(randomComicUrl, { mode: 'no-cors' })
-                .then(response => response.json())
+            const randomComicUrl = `https://cors.bridged.cc/https://xkcd.com/${randomComicNum}`;
+            fetch(randomComicUrl)
+                .then(response => response.text())
                 .then(data => {
-                    const comicUrl = data.img;
-                    const comicTitle = data.title;
+                    const parser = new DOMParser();
+                    const htmlDocument = parser.parseFromString(data, "text/html");
+                    const comicElement = htmlDocument.querySelector("div#comic img");
+                    const comicUrl = comicElement.src;
+                    const comicTitle = comicElement.alt;
                     
                     // Get the image size
                     const img = new Image();
