@@ -1,1 +1,25 @@
-merhaba mkarakoc
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Random XKCD Comic</title>
+  </head>
+  <body>
+    <h1>Random XKCD Comic</h1>
+    <img id="comic" src="" alt="XKCD Comic">
+    <script>
+      const maxComicNum = 2500; // The highest XKCD comic number available
+      const randomComicNum = Math.floor(Math.random() * maxComicNum) + 1;
+      const randomComicUrl = `https://cors-anywhere.herokuapp.com/https://xkcd.com/${randomComicNum}`;
+      fetch(randomComicUrl)
+        .then(response => response.text())
+        .then(data => {
+          const parser = new DOMParser();
+          const htmlDocument = parser.parseFromString(data, "text/html");
+          const comicUrl = htmlDocument.querySelector("div#comic img").src;
+          document.getElementById("comic").src = comicUrl;
+        })
+        .catch(error => console.error(error));
+    </script>
+  </body>
+</html>
+
