@@ -1,4 +1,5 @@
 <!doctype html>
+
 <html>
     <body>
         <a id="comic-link" href="#" target="_blank">
@@ -7,38 +8,42 @@
         <script>
             const maxComicNum = 2500; // The highest XKCD comic number available
             const randomComicNum = Math.floor(Math.random() * maxComicNum) + 1;
-            const randomComicUrl = `https://xkcd.com/${randomComicNum}/info.0.json`;
+            const randomComicUrl = `https://cors-anywhere.herokuapp.com/https://xkcd.com/${randomComicNum}`;
             fetch(randomComicUrl)
-                .then(response => response.json())
+                .then(response => response.text())
                 .then(data => {
-                    const comicUrl = data.img;
-                    const comicTitle = data.title;
-					                // Get the image size
-                const img = new Image();
-                img.src = comicUrl;
-                img.onload = function() {
-                    const imgWidth = img.width;
-                    const imgHeight = img.height;
-                    let newWidth, newHeight;
+                    const parser = new DOMParser();
+                    const htmlDocument = parser.parseFromString(data, "text/html");
+                    const comicElement = htmlDocument.querySelector("div#comic img");
+                    const comicUrl = comicElement.src;
+                    const comicTitle = comicElement.alt;
                     
-                    // Scale down the image while maintaining aspect ratio
-                    if (imgWidth > imgHeight) {
-                        newWidth = 382;
-                        newHeight = Math.round((imgHeight / imgWidth) * newWidth);
-                    } else {
-                        newHeight = 382;
-                        newWidth = Math.round((imgWidth / imgHeight) * newHeight);
+                    // Get the image size
+                    const img = new Image();
+                    img.src = comicUrl;
+                    img.onload = function() {
+                        const imgWidth = img.width;
+                        const imgHeight = img.height;
+                        let newWidth, newHeight;
+                        
+                        // Scale down the image while maintaining aspect ratio
+                        if (imgWidth > imgHeight) {
+                            newWidth = 382;
+                            newHeight = Math.round((imgHeight / imgWidth) * newWidth);
+                        } else {
+                            newHeight = 382;
+                            newWidth = Math.round((imgWidth / imgHeight) * newHeight);
+                        }
+                        
+                        // Update the image size and URL
+                        document.getElementById("comic").src = comicUrl;
+                        document.getElementById("comic").width = newWidth;
+                        document.getElementById("comic").height = newHeight;
+                        document.getElementById("comic-link").href = `https://xkcd.com/${randomComicNum}`;
+                        document.getElementById("comic-link").title = comicTitle;
                     }
-                    
-                    // Update the image size and URL
-                    document.getElementById("comic").src = comicUrl;
-                    document.getElementById("comic").width = newWidth;
-                    document.getElementById("comic").height = newHeight;
-                    document.getElementById("comic-link").href = `https://xkcd.com/${randomComicNum}`;
-                    document.getElementById("comic-link").title = comicTitle;
-                }
-            })
-            .catch(error => console.error(error));
-    </script>        
-</body>
+                })
+                .catch(error => console.error(error));
+        </script>        
+    </body>
 </html>
