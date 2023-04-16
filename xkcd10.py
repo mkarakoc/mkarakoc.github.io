@@ -38,7 +38,7 @@ html_text = f'''
     </script>
   </head>
   <body>
-    <a id="comic-link" href="{data["img"]}"><img id="comic" src="" alt="" /></a>
+    <a id="comic-link" href="{data["img"]}" target="_blank"><img id="comic" src="" alt=""/></a>
   </body>
 </html>
 '''
