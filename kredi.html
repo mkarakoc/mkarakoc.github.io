@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kredi Ödeme Planlayıcısı</title>
+    
+    <!-- Tailwind CSS ve Google Fonts CDN'leri -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Gerekli JS Kütüphaneleri -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for range sliders to match the modern design */
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 10px;
+            background: #d1d5db; /* gray-300 */
+            outline: none;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            border-radius: 9999px;
+        }
+        input[type=range]:hover {
+            opacity: 1;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #2563eb; /* blue-600 */
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            background: #2563eb;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .tab-active {
+            border-bottom-color: #2563eb;
+            color: #2563eb;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-3xl shadow-2xl p-6 sm:p-10 w-full max-w-5xl my-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-800 tracking-tight">Kredi Ödeme Planlayıcısı</h1>
+            <p class="text-gray-500 mt-2">Kredi planınızı kolayca hesaplayın ve görselleştirin.</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <!-- Left Column: Inputs & Summary -->
+            <div class="space-y-8">
+                <!-- Loan Inputs -->
+                <div class="space-y-6">
+                    <div>
+                        <label for="loanAmount" class="flex justify-between items-center text-sm font-medium text-gray-700">
+                            <span>Kredi Tutarı</span>
+                            <span class="font-semibold text-blue-600">₺<span id="loanAmountDisplay">100.000</span></span>
+                        </label>
+                        <input type="range" id="loanAmountSlider" min="1000" max="5000000" step="1000" value="100000" class="mt-2">
+                        <input type="number" id="loanAmount" value="100000" class="hidden">
+                    </div>
+                    <div>
+                        <label for="loanTerm" class="flex justify-between items-center text-sm font-medium text-gray-700">
+                            <span>Vade (Ay)</span>
+                            <span class="font-semibold text-blue-600"><span id="loanTermDisplay">72</span> Ay</span>
+                        </label>
+                        <input type="range" id="loanTermSlider" min="12" max="240" step="1" value="72" class="mt-2">
+                        <input type="number" id="loanTerm" value="72" class="hidden">
+                    </div>
+                    <div>
+                        <label for="interestRate" class="block text-sm font-medium text-gray-700">Aylık Faiz Oranı (%)</label>
+                        <input type="number" id="interestRate" step="0.01" value="0.84" class="mt-1 block w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    </div>
+                </div>
+                
+                <!-- Summary Section -->
+                <div class="bg-blue-50 rounded-2xl p-6 space-y-4 shadow-inner">
+                    <div class="flex flex-col sm:flex-row justify-between items-center border-b pb-4 border-blue-200">
+                        <h2 class="text-xl font-bold text-blue-700 mb-2 sm:mb-0">Özet</h2>
+                        <div class="flex flex-wrap justify-center sm:justify-end gap-2">
+                            <button id="printPdfBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full transition duration-300 transform hover:scale-105 shadow-lg text-sm">PDF Oluştur</button>
+                            <button id="printDocxBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-full transition duration-300 transform hover:scale-105 shadow-lg text-sm">DOCX Oluştur</button>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-blue-700 font-medium">Aylık Taksit</span>
+                        <span id="monthlyPayment" class="font-bold text-2xl text-blue-800">₺0.00</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-600">Toplam Faiz</span>
+                        <span id="totalInterest" class="font-semibold text-gray-800">₺0.00</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-600">Toplam Geri Ödeme</span>
+                        <span id="totalRepayment" class="font-semibold text-gray-800">₺0.00</span>
+                    </div>
+                </div>
+
+                <!-- Financial Tips Section -->
+                <div class="bg-white rounded-2xl p-6 shadow-xl">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Finansal İpuçları ✨</h2>
+                    <button id="generateTipBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-full transition duration-300 shadow-md transform hover:scale-105 text-sm">
+                        İpucu Oluştur
+                    </button>
+                    <div id="tipOutput" class="mt-4 p-4 bg-gray-50 rounded-lg text-gray-700 leading-relaxed text-sm min-h-[50px] flex items-center justify-center">
+                        <p class="text-center text-gray-500">Finansal ipucu almak için butona tıklayın.</p>
+                    </div>
+                    <div id="loadingIndicatorTip" class="hidden text-center text-gray-500 animate-pulse mt-4">
+                       <span class="text-blue-500">İpuçları oluşturuluyor...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Chart & Table -->
+            <div class="lg:col-span-1">
+                <!-- Tabs for Chart and Table -->
+                <div class="border-b-2 border-gray-200 mb-6">
+                    <nav class="-mb-0.5 flex space-x-4 sm:space-x-8" aria-label="Tabs">
+                        <button id="chartTab" class="whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm sm:text-base tab-active transition-colors duration-200">Grafik</button>
+                        <button id="tableTab" class="whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm sm:text-base text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors duration-200">Tablo</button>
+                    </nav>
+                </div>
+                
+                <!-- Chart Container -->
+                <div id="chartContainer" class="h-80 sm:h-96">
+                    <canvas id="paymentChart"></canvas>
+                </div>
+
+                <!-- Table Container -->
+                <div id="tableContainer" class="hidden overflow-auto rounded-xl shadow-inner" style="max-height: 400px;">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ay</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Anapara</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Faiz</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kalan Anapara</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentTableBody" class="bg-white divide-y divide-gray-200"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Main JavaScript Logic -->
+    <script>
+        // DOM Element References
+        const loanAmountInput = document.getElementById('loanAmount');
+        const loanAmountSlider = document.getElementById('loanAmountSlider');
+        const loanAmountDisplay = document.getElementById('loanAmountDisplay');
+        const interestRateInput = document.getElementById('interestRate');
+        const loanTermInput = document.getElementById('loanTerm');
+        const loanTermSlider = document.getElementById('loanTermSlider');
+        const loanTermDisplay = document.getElementById('loanTermDisplay');
+        const monthlyPaymentEl = document.getElementById('monthlyPayment');
+        const totalInterestEl = document.getElementById('totalInterest');
+        const totalRepaymentEl = document.getElementById('totalRepayment');
+        const chartTab = document.getElementById('chartTab');
+        const tableTab = document.getElementById('tableTab');
+        const chartContainer = document.getElementById('chartContainer');
+        const tableContainer = document.getElementById('tableContainer');
+        const paymentTableBody = document.getElementById('paymentTableBody');
+        const printPdfBtn = document.getElementById('printPdfBtn');
+        const generateTipBtn = document.getElementById('generateTipBtn');
+        const tipOutput = document.getElementById('tipOutput');
+        const loadingIndicatorTip = document.getElementById('loadingIndicatorTip');
+
+        let paymentChart;
+        // Global variable to store payment data for export functions
+        window.currentPayments = []; 
+
+        // Event Listeners
+        loanAmountSlider.addEventListener('input', updateValues);
+        loanTermSlider.addEventListener('input', updateValues);
+        interestRateInput.addEventListener('input', calculateAndDisplay);
+        printPdfBtn.addEventListener('click', generatePDF);
+        generateTipBtn.addEventListener('click', generateFinancialTip);
+
+        // DOCX button event listener and import (already in the original code, but consolidated here for a single file)
+        const printDocxBtn = document.getElementById('printDocxBtn');
+        printDocxBtn.addEventListener('click', generateDOCX);
+
+        chartTab.addEventListener('click', () => toggleTabs('chart'));
+        tableTab.addEventListener('click', () => toggleTabs('table'));
+        
+        // Function to update input and display values from sliders
+        function updateValues(e) {
+            if (e.target.id === 'loanAmountSlider') {
+                loanAmountInput.value = e.target.value;
+                loanAmountDisplay.textContent = parseFloat(e.target.value).toLocaleString('tr-TR');
+            } else if (e.target.id === 'loanTermSlider') {
+                loanTermInput.value = e.target.value;
+                loanTermDisplay.textContent = e.target.value;
+            }
+            calculateAndDisplay();
+        }
+
+        // Toggles between the chart and table views
+        function toggleTabs(activeTab) {
+            if (activeTab === 'chart') {
+                chartContainer.classList.remove('hidden');
+                tableContainer.classList.add('hidden');
+                chartTab.classList.add('tab-active');
+                tableTab.classList.remove('tab-active');
+            } else {
+                chartContainer.classList.add('hidden');
+                tableContainer.classList.remove('hidden');
+                tableTab.classList.add('tab-active');
+                chartTab.classList.remove('tab-active');
+            }
+        }
+
+        // Main calculation function
+        function calculateAndDisplay() {
+            const principal = parseFloat(loanAmountInput.value);
+            const monthlyInterestRate = parseFloat(interestRateInput.value) / 100;
+            const termInMonths = parseInt(loanTermInput.value);
+
+            if (isNaN(principal) || isNaN(monthlyInterestRate) || isNaN(termInMonths) || principal <= 0 || monthlyInterestRate < 0 || termInMonths <= 0) {
+                // Handle invalid input by resetting values
+                monthlyPaymentEl.textContent = '₺0.00';
+                totalInterestEl.textContent = '₺0.00';
+                totalRepaymentEl.textContent = '₺0.00';
+                updateChart([]);
+                updateTable([]);
+                return;
+            }
+
+            const monthlyPayment = monthlyInterestRate > 0 
+                ? principal * (monthlyInterestRate * Math.pow(1 + monthlyInterestRate, termInMonths)) / (Math.pow(1 + monthlyInterestRate, termInMonths) - 1)
+                : principal / termInMonths;
+            
+            const totalRepayment = monthlyPayment * termInMonths;
+            const totalInterest = totalRepayment - principal;
+
+            // Update Summary
+            monthlyPaymentEl.textContent = `₺${monthlyPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            totalInterestEl.textContent = `₺${totalInterest.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            totalRepaymentEl.textContent = `₺${totalRepayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            // Generate payment schedule array
+            let remainingBalance = principal;
+            const payments = [];
+            for (let i = 1; i <= termInMonths; i++) {
+                const interestPayment = remainingBalance * monthlyInterestRate;
+                const principalPayment = monthlyPayment - interestPayment;
+                remainingBalance -= principalPayment;
+
+                payments.push({
+                    month: i,
+                    principalPayment: principalPayment,
+                    interestPayment: interestPayment,
+                    totalPayment: monthlyPayment,
+                    remainingPrincipal: remainingBalance > 0 ? remainingBalance : 0
+                });
+            }
+            
+            window.currentPayments = payments; // Store for PDF and DOCX
+            updateChart(payments);
+            updateTable(payments);
+        }
+
+        // Updates the Chart.js graph
+        function updateChart(payments) {
+            const ctx = document.getElementById('paymentChart').getContext('2d');
+            const labels = payments.map(p => p.month);
+            const principalData = payments.map(p => p.principalPayment);
+            const interestData = payments.map(p => p.interestPayment);
+            const totalPaymentData = payments.map(p => p.totalPayment);
+
+            if (paymentChart) {
+                paymentChart.destroy();
+            }
+
+            paymentChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Anapara Ödemesi',
+                        data: principalData,
+                        borderColor: 'rgb(59, 130, 246)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 0,
+                    }, {
+                        label: 'Faiz Ödemesi',
+                        data: interestData,
+                        borderColor: 'rgb(234, 179, 8)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 0,
+                    }, {
+                        label: 'Aylık Taksit',
+                        data: totalPaymentData,
+                        borderColor: 'rgb(75, 85, 99)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 0,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) { return '₺' + value.toLocaleString('tr-TR'); }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Ay'
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    }
+                }
+            });
+        }
+        
+        // Updates the payment table
+        function updateTable(payments) {
+            paymentTableBody.innerHTML = ''; 
+            payments.forEach(p => {
+                const row = `
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${p.month}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₺${p.principalPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₺${p.interestPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₺${p.remainingPrincipal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>
+                `;
+                paymentTableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        // Generates and saves a PDF report
+        async function generatePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            
+            doc.setFontSize(20);
+            doc.text("Kredi Ödeme Raporu", 105, 20, null, null, "center");
+            doc.setFontSize(12);
+            doc.text("Kredi Özeti", 14, 40);
+            
+            const summaryData = [
+                ["Kredi Tutarı:", `₺${parseFloat(loanAmountInput.value).toLocaleString('tr-TR')}`],
+                ["Vade (Ay):", `${loanTermInput.value} Ay`],
+                ["Aylık Faiz Oranı:", `%${interestRateInput.value}`],
+                ["Aylık Taksit:", monthlyPaymentEl.textContent],
+                ["Toplam Faiz:", totalInterestEl.textContent],
+                ["Toplam Geri Ödeme:", totalRepaymentEl.textContent]
+            ];
+
+            doc.autoTable({
+                startY: 45,
+                head: [['Açıklama', 'Değer']],
+                body: summaryData,
+                theme: 'grid',
+                styles: { cellPadding: 2, fontSize: 10 },
+                headStyles: { fillColor: [41, 128, 185] }
+            });
+
+            doc.addPage();
+            doc.setFontSize(20);
+            doc.text("Ödeme Grafiği", 105, 20, null, null, "center");
+            const chartCanvas = document.getElementById('paymentChart');
+            const chartImage = chartCanvas.toDataURL('image/png', 1.0);
+            doc.addImage(chartImage, 'PNG', 10, 30, 190, 100);
+
+            doc.addPage();
+            doc.setFontSize(20);
+            doc.text("Ödeme Tablosu", 105, 20, null, null, "center");
+
+            const tableBody = window.currentPayments.map(p => [
+                p.month,
+                `₺${p.principalPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                `₺${p.interestPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                `₺${p.remainingPrincipal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            ]);
+
+            doc.autoTable({
+                startY: 30,
+                head: [['Ay', 'Anapara', 'Faiz', 'Kalan Anapara']],
+                body: tableBody,
+                theme: 'striped',
+                headStyles: { fillColor: [41, 128, 185] }
+            });
+
+            doc.save('kredi-odeme-plani.pdf');
+        }
+
+        // Helper function for DOCX generation
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        // Generates and saves a DOCX report
+        async function generateDOCX() {
+            // Check if docx library is loaded and its classes are available
+            if (typeof docx === 'undefined' || !docx.Document) {
+                console.error("DOCX library is not loaded properly.");
+                alert("DOCX kütüphanesi yüklenemedi. Lütfen daha sonra tekrar deneyin.");
+                return;
+            }
+
+            const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel, ImageRun } = docx;
+
+            const principal = parseFloat(document.getElementById('loanAmount').value);
+            const monthlyPayment = document.getElementById('monthlyPayment').textContent;
+            const totalInterest = document.getElementById('totalInterest').textContent;
+            const totalRepayment = document.getElementById('totalRepayment').textContent;
+            const summaryData = [
+                ["Kredi Tutarı:", `₺${principal.toLocaleString('tr-TR')}`],
+                ["Vade (Ay):", `${document.getElementById('loanTerm').value} Ay`],
+                ["Aylık Faiz Oranı:", `%${document.getElementById('interestRate').value}`],
+                ["Aylık Taksit:", monthlyPayment],
+                ["Toplam Faiz:", totalInterest],
+                ["Toplam Geri Ödeme:", totalRepayment]
+            ];
+
+            const summaryTableRows = summaryData.map(row => new TableRow({
+                children: row.map(cellText => new TableCell({
+                    children: [new Paragraph({ children: [new TextRun({ text: cellText, font: "Inter" })] })],
+                })),
+            }));
+
+            const currentPayments = window.currentPayments || [];
+            const paymentTableRows = [
+                new TableRow({
+                    children: [
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Ay", bold: true, font: "Inter" })] })] }),
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Anapara", bold: true, font: "Inter" })] })] }),
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Faiz", bold: true, font: "Inter" })] })] }),
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Kalan Anapara", bold: true, font: "Inter" })] })] }),
+                    ],
+                }),
+                ...currentPayments.map(p => new TableRow({
+                    children: [
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: p.month.toString(), font: "Inter" })] })] }),
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `₺${p.principalPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, font: "Inter" })] })] }),
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `₺${p.interestPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, font: "Inter" })] })] }),
+                        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `₺${p.remainingPrincipal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, font: "Inter" })] })] }),
+                    ],
+                }))
+            ];
+
+            const chartCanvas = document.getElementById('paymentChart');
+            const chartImage = chartCanvas.toDataURL('image/png', 1.0);
+            const base64String = chartImage.split(',')[1];
+            const imageUint8Array = base64ToArrayBuffer(base64String);
+            
+            const doc = new Document({
+                sections: [
+                    {
+                        children: [
+                            new Paragraph({
+                                children: [new TextRun({ text: "Kredi Ödeme Raporu", size: 40, bold: true, font: "Inter" })],
+                                alignment: "center",
+                                heading: HeadingLevel.HEADING_1,
+                            }),
+                            new Paragraph({ text: "" }),
+                            new Paragraph({
+                                children: [new TextRun({ text: "Kredi Özeti", size: 28, bold: true, font: "Inter" })],
+                                heading: HeadingLevel.HEADING_2,
+                            }),
+                            new Table({ rows: summaryTableRows }),
+                        ],
+                    },
+                    {
+                        children: [
+                            new Paragraph({
+                                children: [new TextRun({ text: "Ödeme Grafiği", size: 28, bold: true, font: "Inter" })],
+                                alignment: "center",
+                                heading: HeadingLevel.HEADING_2,
+                            }),
+                            new Paragraph({
+                                children: [new ImageRun({ data: imageUint8Array, transformation: { width: 450, height: 250 }})],
+                                alignment: "center",
+                            }),
+                        ],
+                    },
+                    {
+                        children: [
+                            new Paragraph({
+                                children: [new TextRun({ text: "Ödeme Tablosu", size: 28, bold: true, font: "Inter" })],
+                                alignment: "center",
+                                heading: HeadingLevel.HEADING_2,
+                            }),
+                            new Table({ rows: paymentTableRows }),
+                        ],
+                    }
+                ],
+            });
+
+            Packer.toBlob(doc).then(blob => {
+                saveAs(blob, "kredi-odeme-plani.docx");
+            });
+        }
+
+        // Gemini API Call Function for Tips
+        async function generateFinancialTip() {
+            loadingIndicatorTip.classList.remove('hidden');
+            tipOutput.innerHTML = '';
+            generateTipBtn.disabled = true;
+
+            const principal = parseFloat(loanAmountInput.value);
+            const monthlyInterestRate = parseFloat(interestRateInput.value);
+            const termInMonths = parseInt(loanTermInput.value);
+            const monthlyPayment = parseFloat(monthlyPaymentEl.textContent.replace('₺', '').replace(/\./g, '').replace(',', '.'));
+            const totalInterest = parseFloat(totalInterestEl.textContent.replace('₺', '').replace(/\./g, '').replace(',', '.'));
+            const totalRepayment = parseFloat(totalRepaymentEl.textContent.replace('₺', '').replace(/\./g, '').replace(',', '.'));
+            
+            const prompt = `
+            Kredi Tutarı: ${principal} TL
+            Vade: ${termInMonths} ay
+            Aylık Faiz Oranı: %${monthlyInterestRate}
+            Aylık Taksit: ${monthlyPayment.toFixed(2)} TL
+            Toplam Faiz: ${totalInterest.toFixed(2)} TL
+            Toplam Geri Ödeme: ${totalRepayment.toFixed(2)} TL
+            Bu verilere dayanarak, kullanıcıya basit, anlaşılır ve eyleme dönüştürülebilir bir finansal ipucu veya tavsiye verin. Finansal okuryazarlığı düşük birine hitap eder gibi konuşun. Yanıtınız yalnızca ipucu metninden oluşmalı, başka bir açıklama veya başlık içermemelidir. En fazla 3-4 cümle olmalıdır.
+            `;
+
+            let retries = 0;
+            const maxRetries = 3;
+            const delay = 1000;
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            while (retries < maxRetries) {
+                try {
+                    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) {
+                        tipOutput.innerHTML = `<p>${text}</p>`;
+                        break;
+                    } else {
+                        throw new Error('No text in API response.');
+                    }
+                } catch (error) {
+                    console.error('API call failed:', error);
+                    retries++;
+                    if (retries < maxRetries) await new Promise(res => setTimeout(res, delay * Math.pow(2, retries)));
+                    else tipOutput.innerHTML = `<p class="text-red-500">İpucu alınamadı. Lütfen daha sonra tekrar deneyin.</p>`;
+                } finally {
+                    loadingIndicatorTip.classList.add('hidden');
+                    generateTipBtn.disabled = false;
+                }
+            }
+        }
+
+        // Initial load calculation
+        window.onload = () => {
+             loanAmountDisplay.textContent = parseFloat(loanAmountInput.value).toLocaleString('tr-TR');
+             loanTermDisplay.textContent = loanTermInput.value;
+             calculateAndDisplay();
+        }
+    </script>
+    <script type="module">
+        import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel, ImageRun } from "https://unpkg.com/docx@8.1.0/build/index.js";
+        
+        window.docx = { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel, ImageRun };
+    </script>
+</body>
+</html>
