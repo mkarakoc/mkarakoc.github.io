@@ -171,9 +171,9 @@
         const tableContainer = document.getElementById('tableContainer');
         const paymentTableBody = document.getElementById('paymentTableBody');
         const printPdfBtn = document.getElementById('printPdfBtn');
+        const printDocxBtn = document.getElementById('printDocxBtn');
         
         let paymentChart;
-        // Global variable to store payment data for export functions
         window.currentPayments = []; 
 
         // Event Listeners
@@ -181,15 +181,10 @@
         loanTermSlider.addEventListener('input', updateValues);
         interestRateInput.addEventListener('input', calculateAndDisplay);
         printPdfBtn.addEventListener('click', generatePDF);
-        
-        // DOCX button event listener and import (already in the original code, but consolidated here for a single file)
-        const printDocxBtn = document.getElementById('printDocxBtn');
         printDocxBtn.addEventListener('click', generateDOCX);
-
         chartTab.addEventListener('click', () => toggleTabs('chart'));
         tableTab.addEventListener('click', () => toggleTabs('table'));
         
-        // Function to update input and display values from sliders
         function updateValues(e) {
             if (e.target.id === 'loanAmountSlider') {
                 loanAmountInput.value = e.target.value;
@@ -201,7 +196,6 @@
             calculateAndDisplay();
         }
 
-        // Toggles between the chart and table views
         function toggleTabs(activeTab) {
             if (activeTab === 'chart') {
                 chartContainer.classList.remove('hidden');
@@ -216,14 +210,12 @@
             }
         }
 
-        // Main calculation function
         function calculateAndDisplay() {
             const principal = parseFloat(loanAmountInput.value);
             const monthlyInterestRate = parseFloat(interestRateInput.value) / 100;
             const termInMonths = parseInt(loanTermInput.value);
 
             if (isNaN(principal) || isNaN(monthlyInterestRate) || isNaN(termInMonths) || principal <= 0 || monthlyInterestRate < 0 || termInMonths <= 0) {
-                // Handle invalid input by resetting values
                 monthlyPaymentEl.textContent = '₺0.00';
                 totalInterestEl.textContent = '₺0.00';
                 totalRepaymentEl.textContent = '₺0.00';
@@ -239,12 +231,10 @@
             const totalRepayment = monthlyPayment * termInMonths;
             const totalInterest = totalRepayment - principal;
 
-            // Update Summary
             monthlyPaymentEl.textContent = `₺${monthlyPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             totalInterestEl.textContent = `₺${totalInterest.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             totalRepaymentEl.textContent = `₺${totalRepayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-            // Generate payment schedule array
             let remainingBalance = principal;
             const payments = [];
             for (let i = 1; i <= termInMonths; i++) {
@@ -261,12 +251,11 @@
                 });
             }
             
-            window.currentPayments = payments; // Store for PDF and DOCX
+            window.currentPayments = payments; 
             updateChart(payments);
             updateTable(payments);
         }
 
-        // Updates the Chart.js graph
         function updateChart(payments) {
             const ctx = document.getElementById('paymentChart').getContext('2d');
             const labels = payments.map(p => p.month);
@@ -339,7 +328,6 @@
             });
         }
         
-        // Updates the payment table
         function updateTable(payments) {
             paymentTableBody.innerHTML = ''; 
             payments.forEach(p => {
@@ -355,7 +343,6 @@
             });
         }
 
-        // Generates and saves a PDF report
         async function generatePDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF('p', 'mm', 'a4');
@@ -412,7 +399,6 @@
             doc.save('kredi-odeme-plani.pdf');
         }
 
-        // Helper function for DOCX generation
         function base64ToArrayBuffer(base64) {
             const binaryString = atob(base64);
             const len = binaryString.length;
@@ -423,16 +409,14 @@
             return bytes;
         }
 
-        // Generates and saves a DOCX report
         async function generateDOCX() {
-            // Check if docx library is loaded and its classes are available
-            if (typeof docx === 'undefined' || !docx.Document) {
+            if (typeof window.docx === 'undefined') {
                 console.error("DOCX library is not loaded properly.");
                 alert("DOCX kütüphanesi yüklenemedi. Lütfen daha sonra tekrar deneyin.");
                 return;
             }
 
-            const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel, ImageRun } = docx;
+            const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel, ImageRun } = window.docx;
 
             const principal = parseFloat(document.getElementById('loanAmount').value);
             const monthlyPayment = document.getElementById('monthlyPayment').textContent;
@@ -526,13 +510,6 @@
             });
         }
 
-        // Gemini API Call Function for Tips
-        // Bu kısım, artık HTML'den kaldırıldığı için boş bırakıldı.
-        async function generateFinancialTip() {
-            // No-op function
-        }
-
-        // Initial load calculation
         window.onload = () => {
              loanAmountDisplay.textContent = parseFloat(loanAmountInput.value).toLocaleString('tr-TR');
              loanTermDisplay.textContent = loanTermInput.value;
