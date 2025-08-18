@@ -117,19 +117,6 @@
                     </div>
                 </div>
 
-                <!-- Financial Tips Section -->
-                <div class="bg-white rounded-2xl p-6 shadow-xl">
-                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Finansal İpuçları ✨</h2>
-                    <button id="generateTipBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-full transition duration-300 shadow-md transform hover:scale-105 text-sm">
-                        İpucu Oluştur
-                    </button>
-                    <div id="tipOutput" class="mt-4 p-4 bg-gray-50 rounded-lg text-gray-700 leading-relaxed text-sm min-h-[50px] flex items-center justify-center">
-                        <p class="text-center text-gray-500">Finansal ipucu almak için butona tıklayın.</p>
-                    </div>
-                    <div id="loadingIndicatorTip" class="hidden text-center text-gray-500 animate-pulse mt-4">
-                       <span class="text-blue-500">İpuçları oluşturuluyor...</span>
-                    </div>
-                </div>
             </div>
 
             <!-- Right Column: Chart & Table -->
@@ -184,10 +171,7 @@
         const tableContainer = document.getElementById('tableContainer');
         const paymentTableBody = document.getElementById('paymentTableBody');
         const printPdfBtn = document.getElementById('printPdfBtn');
-        const generateTipBtn = document.getElementById('generateTipBtn');
-        const tipOutput = document.getElementById('tipOutput');
-        const loadingIndicatorTip = document.getElementById('loadingIndicatorTip');
-
+        
         let paymentChart;
         // Global variable to store payment data for export functions
         window.currentPayments = []; 
@@ -197,8 +181,7 @@
         loanTermSlider.addEventListener('input', updateValues);
         interestRateInput.addEventListener('input', calculateAndDisplay);
         printPdfBtn.addEventListener('click', generatePDF);
-        generateTipBtn.addEventListener('click', generateFinancialTip);
-
+        
         // DOCX button event listener and import (already in the original code, but consolidated here for a single file)
         const printDocxBtn = document.getElementById('printDocxBtn');
         printDocxBtn.addEventListener('click', generateDOCX);
@@ -544,57 +527,9 @@
         }
 
         // Gemini API Call Function for Tips
+        // Bu kısım, artık HTML'den kaldırıldığı için boş bırakıldı.
         async function generateFinancialTip() {
-            loadingIndicatorTip.classList.remove('hidden');
-            tipOutput.innerHTML = '';
-            generateTipBtn.disabled = true;
-
-            const principal = parseFloat(loanAmountInput.value);
-            const monthlyInterestRate = parseFloat(interestRateInput.value);
-            const termInMonths = parseInt(loanTermInput.value);
-            const monthlyPayment = parseFloat(monthlyPaymentEl.textContent.replace('₺', '').replace(/\./g, '').replace(',', '.'));
-            const totalInterest = parseFloat(totalInterestEl.textContent.replace('₺', '').replace(/\./g, '').replace(',', '.'));
-            const totalRepayment = parseFloat(totalRepaymentEl.textContent.replace('₺', '').replace(/\./g, '').replace(',', '.'));
-            
-            const prompt = `
-            Kredi Tutarı: ${principal} TL
-            Vade: ${termInMonths} ay
-            Aylık Faiz Oranı: %${monthlyInterestRate}
-            Aylık Taksit: ${monthlyPayment.toFixed(2)} TL
-            Toplam Faiz: ${totalInterest.toFixed(2)} TL
-            Toplam Geri Ödeme: ${totalRepayment.toFixed(2)} TL
-            Bu verilere dayanarak, kullanıcıya basit, anlaşılır ve eyleme dönüştürülebilir bir finansal ipucu veya tavsiye verin. Finansal okuryazarlığı düşük birine hitap eder gibi konuşun. Yanıtınız yalnızca ipucu metninden oluşmalı, başka bir açıklama veya başlık içermemelidir. En fazla 3-4 cümle olmalıdır.
-            `;
-
-            let retries = 0;
-            const maxRetries = 3;
-            const delay = 1000;
-            const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-
-            while (retries < maxRetries) {
-                try {
-                    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
-                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) throw new Error(`API error: ${response.statusText}`);
-                    const result = await response.json();
-                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) {
-                        tipOutput.innerHTML = `<p>${text}</p>`;
-                        break;
-                    } else {
-                        throw new Error('No text in API response.');
-                    }
-                } catch (error) {
-                    console.error('API call failed:', error);
-                    retries++;
-                    if (retries < maxRetries) await new Promise(res => setTimeout(res, delay * Math.pow(2, retries)));
-                    else tipOutput.innerHTML = `<p class="text-red-500">İpucu alınamadı. Lütfen daha sonra tekrar deneyin.</p>`;
-                } finally {
-                    loadingIndicatorTip.classList.add('hidden');
-                    generateTipBtn.disabled = false;
-                }
-            }
+            // No-op function
         }
 
         // Initial load calculation
