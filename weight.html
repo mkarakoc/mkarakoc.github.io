@@ -10,6 +10,10 @@
     
     <!-- Chart.js for graphing -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Date adapter for Chart.js to handle time scales -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <!-- Zoom plugin for Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     
     <!-- regression-js for trendlines -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/regression/2.0.1/regression.min.js"></script>
@@ -121,7 +125,29 @@
             
             <!-- Left Pane: Chart -->
             <section id="chart-pane" class="bg-white p-6 rounded-xl shadow-lg overflow-hidden flex flex-col">
-                <h2 class="text-xl font-bold text-slate-800 mb-4">Progress Chart</h2>
+                <div class="flex flex-wrap items-center justify-between gap-y-2 mb-4">
+                    <h2 class="text-xl font-bold text-slate-800">Progress Chart</h2>
+                    <div id="chart-controls" class="flex items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+                        <div id="chart-toggles" class="flex items-center gap-x-4">
+                            <div class="flex items-center">
+                                <input type="checkbox" id="toggle-daily" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
+                                <label for="toggle-daily" class="ml-2 cursor-pointer">Daily</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="toggle-trend" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
+                                <label for="toggle-trend" class="ml-2 cursor-pointer">Trend</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="toggle-weekly" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
+                                <label for="toggle-weekly" class="ml-2 cursor-pointer">Weekly</label>
+                            </div>
+                        </div>
+                        <button id="reset-zoom-btn" class="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold transition">
+                            <i data-lucide="zoom-out" class="w-4 h-4"></i>
+                            Reset Zoom
+                        </button>
+                    </div>
+                </div>
                 <div class="relative flex-grow">
                     <canvas id="weightChart"></canvas>
                 </div>
@@ -184,6 +210,7 @@
             const csvFileInput = document.getElementById('csvFileInput');
             const dataTableBody = document.querySelector("#dataTable tbody");
             const ctx = document.getElementById('weightChart').getContext('2d');
+            const resetZoomBtn = document.getElementById('reset-zoom-btn');
             
             let weightChart;
 
@@ -240,6 +267,11 @@
             csvFileInput.addEventListener('change', handleFileUpload);
             exportButton.addEventListener('click', exportDataToCSV);
             addRowButton.addEventListener('click', addNewRowToTable);
+            resetZoomBtn.addEventListener('click', () => {
+                if (weightChart) {
+                    weightChart.resetZoom();
+                }
+            });
 
             // --- Core App Functions ---
             function initializeChart() {
@@ -251,8 +283,15 @@
                         maintainAspectRatio: false,
                         scales: {
                             x: { 
-                                type: 'linear', 
-                                title: { display: true, text: 'Days Since Start', font: { weight: '600' } }, 
+                                type: 'time', // Use time scale
+                                time: {
+                                    unit: 'day',
+                                    tooltipFormat: 'MMM d, yyyy', // Format for tooltips
+                                    displayFormats: {
+                                        day: 'MMM d' // Format for axis labels
+                                    }
+                                },
+                                title: { display: true, text: 'Date', font: { weight: '600' } }, 
                                 grid: { color: '#e2e8f0' } 
                             },
                             y: { 
@@ -264,20 +303,60 @@
                             legend: { 
                                 position: 'top',
                                 labels: {
-                                    // This callback function filters the legend items.
                                     filter: function(legendItem, chartData) {
-                                        // Hide the 'Future Trend' legend item.
-                                        return legendItem.text !== 'Future Trend';
+                                        // Hide datasets that shouldn't be in the legend
+                                        const hiddenLabels = ['Future Trend', 'Weekly Std Dev'];
+                                        return !hiddenLabels.includes(legendItem.text);
                                     }
                                 }
                              },
                             tooltip: { 
-                                mode: 'index', 
-                                intersect: false,
-                                callbacks: { title: (items) => `Day ${items[0].label}` } 
+                                enabled: true,
+                                mode: 'nearest', 
+                                intersect: true,
+                                position: 'nearest',
+                                caretPadding: 15,
+                                displayColors: false,
+                                callbacks: {
+                                    title: function(tooltipItems) {
+                                        const date = new Date(tooltipItems[0].parsed.x);
+                                        return date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                                    },
+                                    label: function(tooltipItem) {
+                                        let label = tooltipItem.dataset.label || '';
+                                        if (label && !['Weekly Std Dev'].includes(label)) {
+                                            label += ': ';
+                                        } else {
+                                            label = '';
+                                        }
+                                        if (tooltipItem.parsed.y !== null) {
+                                            label += tooltipItem.parsed.y.toFixed(1) + ' kg';
+                                        }
+                                        return label;
+                                    }
+                                }
+                            },
+                            zoom: {
+                                zoom: {
+                                    wheel: {
+                                        enabled: true,
+                                    },
+                                    drag: {
+                                        enabled: true
+                                    },
+                                    mode: 'xy',
+                                },
+                                pan: {
+                                    enabled: true,
+                                    mode: 'xy',
+                                }
                             }
                         },
-                        interaction: { mode: 'nearest', axis: 'x', intersect: false }
+                        interaction: { 
+                            mode: 'nearest',
+                            axis: 'x', 
+                            intersect: true
+                        }
                     }
                 });
             }
@@ -310,7 +389,7 @@
                     `;
                     dataTableBody.appendChild(row);
                 });
-                lucide.createIcons(); // Re-render icons for new rows
+                lucide.createIcons();
                 document.querySelectorAll('.delete-row-btn').forEach(button => {
                     button.addEventListener('click', (e) => e.currentTarget.closest('tr').remove());
                 });
@@ -335,14 +414,13 @@
                         <button class="delete-row-btn text-slate-400 hover:text-red-600 p-1 rounded-full hover:bg-red-100 transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </td>
                 `;
-                // Remove placeholder if it exists
                 const placeholder = dataTableBody.querySelector('td[colspan="3"]');
                 if (placeholder) placeholder.parentElement.remove();
 
                 dataTableBody.appendChild(row);
                 lucide.createIcons();
                 row.querySelector('.delete-row-btn').addEventListener('click', (e) => e.currentTarget.closest('tr').remove());
-                row.querySelector('input[type="number"]').focus(); // Focus on the new weight input
+                row.querySelector('input[type="number"]').focus();
             }
 
             function getDataFromTable() {
@@ -403,7 +481,7 @@
                     }
                 };
                 reader.readAsText(file);
-                csvFileInput.value = ''; // Reset for next upload
+                csvFileInput.value = '';
             }
 
             function parseCSV(text) {
@@ -436,6 +514,15 @@
                 document.body.removeChild(link);
             }
 
+            // --- Calculation Helper ---
+            function calculateStandardDeviation(array) {
+                if (array.length < 2) return 0;
+                const n = array.length;
+                const mean = array.reduce((a, b) => a + b) / n;
+                const variance = array.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1);
+                return Math.sqrt(variance);
+            }
+
             // --- Graph Plotting ---
             function plotGraph(data) {
                 if (!weightChart) initializeChart();
@@ -457,88 +544,170 @@
                 if (weightChart.options.plugins.title) weightChart.options.plugins.title.display = false;
                 
                 const startDate = new Date(data[0].date);
-                const processedData = data.map(d => ({ 
+
+                function getDateStringFromDays(days) {
+                    const newDate = new Date(startDate);
+                    newDate.setDate(newDate.getDate() + days);
+                    return newDate.toISOString().split('T')[0];
+                }
+
+                const plotData = data.map(d => ({ x: d.date, y: d.mass }));
+
+                const numericalData = data.map(d => ({ 
                     days: Math.round((new Date(d.date) - startDate) / (1000 * 60 * 60 * 24)), 
                     mass: d.mass 
                 }));
                 
-                const labels = processedData.map(d => d.days);
-                const regressionPoints = processedData.map(d => [d.days, d.mass]);
+                const days = numericalData.map(d => d.days);
+                const regressionPoints = numericalData.map(d => [d.days, d.mass]);
                 const linFit = regression.linear(regressionPoints);
 
-                // --- Extrapolation Logic ---
-                const lastDayOfData = labels.length > 0 ? Math.max(...labels) : 0;
+                const lastDayOfData = days.length > 0 ? Math.max(...days) : 0;
                 const futureLimit = lastDayOfData + 30;
 
-                const extendedLabels = [];
-                for (let i = 0; i <= futureLimit; i++) {
-                    extendedLabels.push(i);
-                }
+                const currentTrendPoints = days.map(day => ({ 
+                    x: getDateStringFromDays(day), 
+                    y: linFit.predict(day)[1] 
+                }));
+                
+                const lastTrendPoint = { 
+                    x: getDateStringFromDays(lastDayOfData), 
+                    y: linFit.predict(lastDayOfData)[1] 
+                };
 
-                const currentTrendPoints = labels.map(day => ({ x: day, y: linFit.predict(day)[1] }));
-                const lastTrendPoint = { x: lastDayOfData, y: linFit.predict(lastDayOfData)[1] };
-
-                const futureTrendPoints = [lastTrendPoint]; // Start with the last known point to connect the line
+                const futureTrendPoints = [lastTrendPoint];
                 for (let i = lastDayOfData + 1; i <= futureLimit; i++) {
-                    futureTrendPoints.push({ x: i, y: linFit.predict(i)[1] });
-                }
-                // --- End Extrapolation Logic ---
-
-                // 7-day moving average
-                const movingAvgPoints = [];
-                for (let i = 6; i < processedData.length; i++) {
-                    const sum = processedData.slice(i - 6, i + 1).reduce((acc, val) => acc + val.mass, 0);
-                    movingAvgPoints.push({ x: processedData[i].days, y: sum / 7 });
+                    futureTrendPoints.push({ x: getDateStringFromDays(i), y: linFit.predict(i)[1] });
                 }
 
-                weightChart.data.labels = extendedLabels; // Use the full range for the x-axis
+                // --- Weekly Average & Stdev Logic ---
+                const weeklyData = {};
+                numericalData.forEach(d => {
+                    const weekIndex = Math.floor(d.days / 7);
+                    if (!weeklyData[weekIndex]) {
+                        weeklyData[weekIndex] = { days: [], masses: [] };
+                    }
+                    weeklyData[weekIndex].days.push(d.days);
+                    weeklyData[weekIndex].masses.push(d.mass);
+                });
+
+                const weeklyAveragePoints = [];
+                const weeklyErrorBars = [];
+                Object.keys(weeklyData).forEach(weekIndexStr => {
+                    const weekIndex = parseInt(weekIndexStr);
+                    const week = weeklyData[weekIndex];
+                    if (week.masses.length === 0) return;
+                    
+                    const avgMass = week.masses.reduce((a, b) => a + b, 0) / week.masses.length;
+                    const stdDev = calculateStandardDeviation(week.masses);
+                    
+                    const lastDayOfWeek = (weekIndex * 7) + 6;
+                    const lastDateStr = getDateStringFromDays(lastDayOfWeek);
+
+                    weeklyAveragePoints.push({ x: lastDateStr, y: avgMass });
+                    weeklyErrorBars.push({ x: lastDateStr, y: [avgMass - stdDev, avgMass + stdDev] });
+                });
+                // --- End Weekly Logic ---
+
+                weightChart.data.labels = [];
                 weightChart.data.datasets = [
                     {
                         label: 'Daily Weight',
-                        data: processedData.map(d => ({x: d.days, y: d.mass})),
-                        borderColor: 'rgba(59, 130, 246, 0.5)', // blue-500
-                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                        data: plotData,
+                        borderColor: 'rgba(0, 0, 0, 0.3)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        pointBackgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        borderWidth: 1,
+                        borderDash: [5, 5],
                         pointRadius: 4,
                         pointHoverRadius: 6,
-                        type: 'scatter',
-                        order: 3
+                        type: 'line',
+                        order: 4
                     },
                     {
                         label: 'Trend Line',
                         data: currentTrendPoints,
-                        borderColor: 'rgba(239, 68, 68, 1)', // red-500
+                        borderColor: 'rgba(217, 70, 239, 1)', // Magenta
                         borderWidth: 2.5,
                         pointRadius: 0,
                         type: 'line',
                         order: 0
                     },
                     {
-                        label: 'Future Trend', // Hidden from legend via chart options
+                        label: 'Future Trend',
                         data: futureTrendPoints,
-                        borderColor: 'rgba(239, 68, 68, 1)', // Same color as main trend line
-                        borderWidth: 2.5,
-                        pointRadius: 0,
-                        borderDash: [5, 5], // Dashed for future
-                        type: 'line',
-                        order: 1
-                    },
-                    {
-                        label: '7-Day Average',
-                        data: movingAvgPoints,
-                        borderColor: 'rgba(16, 185, 129, 1)', // emerald-500
+                        borderColor: 'rgba(217, 70, 239, 1)', // Magenta
                         borderWidth: 2.5,
                         pointRadius: 0,
                         borderDash: [5, 5],
                         type: 'line',
-                        order: 2
+                        order: 1
+                    },
+                    {
+                        label: 'Weekly Average',
+                        data: weeklyAveragePoints,
+                        backgroundColor: 'rgba(255, 0, 0, 0.5)',
+                        borderColor: 'rgba(255, 0, 0, 0.5)',
+                        borderWidth: 2,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        type: 'scatter',
+                        order: 2,
+                    },
+                    {
+                        label: 'Weekly Std Dev',
+                        data: weeklyErrorBars,
+                        backgroundColor: 'rgba(255, 0, 0, 0.5)',
+                        borderColor: 'rgba(255, 0, 0, 0.5)',
+                        borderWidth: { top: 3, bottom: 3, left: 0, right: 0 },
+                        borderSkipped: false,
+                        barPercentage: 0.2,
+                        type: 'bar',
+                        order: 3,
                     }
                 ];
+                
+                weightChart.options.scales.x.max = getDateStringFromDays(futureLimit);
                 weightChart.update();
+            }
+
+             // --- Chart Toggles ---
+            function setupChartToggles() {
+                const toggleDaily = document.getElementById('toggle-daily');
+                const toggleTrend = document.getElementById('toggle-trend');
+                const toggleWeekly = document.getElementById('toggle-weekly');
+
+                const toggleListener = (event) => {
+                    if (!weightChart) return;
+
+                    const isChecked = event.target.checked;
+                    const id = event.target.id;
+
+                    switch (id) {
+                        case 'toggle-daily':
+                            weightChart.setDatasetVisibility(0, isChecked); // Daily Weight
+                            break;
+                        case 'toggle-trend':
+                            weightChart.setDatasetVisibility(1, isChecked); // Trend Line
+                            weightChart.setDatasetVisibility(2, isChecked); // Future Trend
+                            break;
+                        case 'toggle-weekly':
+                            weightChart.setDatasetVisibility(3, isChecked); // Weekly Average
+                            weightChart.setDatasetVisibility(4, isChecked); // Weekly Std Dev
+                            break;
+                    }
+                    weightChart.update();
+                };
+
+                toggleDaily.addEventListener('change', toggleListener);
+                toggleTrend.addEventListener('change', toggleListener);
+                toggleWeekly.addEventListener('change', toggleListener);
             }
 
             // --- Initial Load ---
             initializeChart();
             updateApp();
+            setupChartToggles();
         });
     </script>
 </body>
