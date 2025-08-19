@@ -128,19 +128,13 @@
                 <div class="flex flex-wrap items-center justify-between gap-y-2 mb-4">
                     <h2 class="text-xl font-bold text-slate-800">Progress Chart</h2>
                     <div id="chart-controls" class="flex items-center gap-x-4 gap-y-2 text-sm text-slate-600">
-                        <div id="chart-toggles" class="flex items-center gap-x-4">
-                            <div class="flex items-center">
-                                <input type="checkbox" id="toggle-daily" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
-                                <label for="toggle-daily" class="ml-2 cursor-pointer">Daily</label>
-                            </div>
-                            <div class="flex items-center">
-                                <input type="checkbox" id="toggle-trend" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
-                                <label for="toggle-trend" class="ml-2 cursor-pointer">Trend</label>
-                            </div>
-                            <div class="flex items-center">
-                                <input type="checkbox" id="toggle-weekly" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
-                                <label for="toggle-weekly" class="ml-2 cursor-pointer">Weekly</label>
-                            </div>
+                         <div class="flex items-center gap-2 p-1 bg-slate-100 rounded-lg">
+                            <button id="zoom-btn" class="px-2 py-1 rounded-md bg-white shadow-sm flex items-center gap-1 text-indigo-600 font-semibold transition">
+                                <i data-lucide="zoom-in" class="w-4 h-4"></i> Zoom
+                            </button>
+                            <button id="pan-btn" class="px-2 py-1 rounded-md flex items-center gap-1 text-slate-600 font-semibold transition">
+                                <i data-lucide="hand" class="w-4 h-4"></i> Pan
+                            </button>
                         </div>
                         <button id="reset-zoom-btn" class="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold transition">
                             <i data-lucide="zoom-out" class="w-4 h-4"></i>
@@ -211,6 +205,8 @@
             const dataTableBody = document.querySelector("#dataTable tbody");
             const ctx = document.getElementById('weightChart').getContext('2d');
             const resetZoomBtn = document.getElementById('reset-zoom-btn');
+            const zoomBtn = document.getElementById('zoom-btn');
+            const panBtn = document.getElementById('pan-btn');
             
             let weightChart;
 
@@ -272,6 +268,28 @@
                     weightChart.resetZoom();
                 }
             });
+             zoomBtn.addEventListener('click', () => setChartMode('zoom'));
+            panBtn.addEventListener('click', () => setChartMode('pan'));
+
+            // --- Chart Mode ---
+            function setChartMode(mode) {
+                if (!weightChart) return;
+
+                const zoomOptions = weightChart.options.plugins.zoom.zoom;
+                const panOptions = weightChart.options.plugins.zoom.pan;
+
+                if (mode === 'pan') {
+                    panOptions.enabled = true;
+                    zoomOptions.drag.enabled = false;
+                    panBtn.classList.add('bg-white', 'shadow-sm', 'text-indigo-600');
+                    zoomBtn.classList.remove('bg-white', 'shadow-sm', 'text-indigo-600');
+                } else { // Default to zoom
+                    panOptions.enabled = false;
+                    zoomOptions.drag.enabled = true;
+                    zoomBtn.classList.add('bg-white', 'shadow-sm', 'text-indigo-600');
+                    panBtn.classList.remove('bg-white', 'shadow-sm', 'text-indigo-600');
+                }
+            }
 
             // --- Core App Functions ---
             function initializeChart() {
@@ -301,11 +319,41 @@
                         },
                         plugins: {
                             legend: { 
+                                display: true,
                                 position: 'top',
+                                align: 'start',
+                                onClick: (e, legendItem, legend) => {
+                                    const index = legendItem.datasetIndex;
+                                    const ci = legend.chart;
+                                    const meta = ci.getDatasetMeta(index);
+                                    
+                                    meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+
+                                    // Handle grouped datasets
+                                    if (legendItem.text === 'Daily Trend') {
+                                        const futureMeta = ci.getDatasetMeta(2); // Future Trend
+                                        futureMeta.hidden = meta.hidden;
+                                    } else if (legendItem.text === 'Weekly Average') {
+                                        const stdDevMeta = ci.getDatasetMeta(4); // Weekly Std Dev
+                                        stdDevMeta.hidden = meta.hidden;
+                                    } else if (legendItem.text === 'Weekly Trend') {
+                                        const futureWeeklyMeta = ci.getDatasetMeta(6); // Weekly Future Trend
+                                        futureWeeklyMeta.hidden = meta.hidden;
+                                    }
+                                    
+                                    ci.update();
+                                },
                                 labels: {
+                                    sort: (a, b) => {
+                                        const legendOrder = ['Daily Weight', 'Weekly Average', 'Daily Trend', 'Weekly Trend'];
+                                        const aIndex = legendOrder.indexOf(a.text);
+                                        const bIndex = legendOrder.indexOf(b.text);
+                                        if (aIndex === -1) return 1;
+                                        if (bIndex === -1) return -1;
+                                        return aIndex - bIndex;
+                                    },
                                     filter: function(legendItem, chartData) {
-                                        // Hide datasets that shouldn't be in the legend
-                                        const hiddenLabels = ['Future Trend', 'Weekly Std Dev'];
+                                        const hiddenLabels = ['Future Trend', 'Weekly Std Dev', 'Weekly Future Trend'];
                                         return !hiddenLabels.includes(legendItem.text);
                                     }
                                 }
@@ -347,7 +395,7 @@
                                     mode: 'xy',
                                 },
                                 pan: {
-                                    enabled: true,
+                                    enabled: false, // Start with pan disabled
                                     mode: 'xy',
                                 }
                             }
@@ -593,6 +641,7 @@
 
                 const weeklyAveragePoints = [];
                 const weeklyErrorBars = [];
+                const weeklyRegressionPoints = [];
                 Object.keys(weeklyData).forEach(weekIndexStr => {
                     const weekIndex = parseInt(weekIndexStr);
                     const week = weeklyData[weekIndex];
@@ -606,8 +655,25 @@
 
                     weeklyAveragePoints.push({ x: lastDateStr, y: avgMass });
                     weeklyErrorBars.push({ x: lastDateStr, y: [avgMass - stdDev, avgMass + stdDev] });
+                    weeklyRegressionPoints.push([lastDayOfWeek, avgMass]);
                 });
                 // --- End Weekly Logic ---
+
+                // --- Weekly Trend Calculation ---
+                const weeklyLinFit = regression.linear(weeklyRegressionPoints);
+                const weeklyCurrentTrendPoints = days.map(day => ({
+                    x: getDateStringFromDays(day),
+                    y: weeklyLinFit.predict(day)[1]
+                }));
+                const weeklyLastTrendPoint = {
+                    x: getDateStringFromDays(lastDayOfData),
+                    y: weeklyLinFit.predict(lastDayOfData)[1]
+                };
+                const weeklyFutureTrendPoints = [weeklyLastTrendPoint];
+                for (let i = lastDayOfData + 1; i <= futureLimit; i++) {
+                    weeklyFutureTrendPoints.push({ x: getDateStringFromDays(i), y: weeklyLinFit.predict(i)[1] });
+                }
+                // --- End Weekly Trend Calculation ---
 
                 weightChart.data.labels = [];
                 weightChart.data.datasets = [
@@ -622,12 +688,13 @@
                         pointRadius: 4,
                         pointHoverRadius: 6,
                         type: 'line',
-                        order: 4
+                        order: 5
                     },
                     {
-                        label: 'Trend Line',
+                        label: 'Daily Trend',
                         data: currentTrendPoints,
                         borderColor: 'rgba(217, 70, 239, 1)', // Magenta
+                        backgroundColor: 'rgba(217, 70, 239, 1)', // Magenta
                         borderWidth: 2.5,
                         pointRadius: 0,
                         type: 'line',
@@ -637,6 +704,7 @@
                         label: 'Future Trend',
                         data: futureTrendPoints,
                         borderColor: 'rgba(217, 70, 239, 1)', // Magenta
+                        backgroundColor: 'rgba(217, 70, 239, 1)', // Magenta
                         borderWidth: 2.5,
                         pointRadius: 0,
                         borderDash: [5, 5],
@@ -652,7 +720,7 @@
                         pointRadius: 5,
                         pointHoverRadius: 7,
                         type: 'scatter',
-                        order: 2,
+                        order: 3,
                     },
                     {
                         label: 'Weekly Std Dev',
@@ -663,7 +731,27 @@
                         borderSkipped: false,
                         barPercentage: 0.2,
                         type: 'bar',
-                        order: 3,
+                        order: 4,
+                    },
+                    {
+                        label: 'Weekly Trend',
+                        data: weeklyCurrentTrendPoints,
+                        backgroundColor: 'rgba(59, 130, 246, 1)', // Blue
+                        borderColor: 'rgba(59, 130, 246, 1)', // Blue
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        type: 'line',
+                        order: 2
+                    },
+                    {
+                        label: 'Weekly Future Trend',
+                        data: weeklyFutureTrendPoints,
+                        borderColor: 'rgba(59, 130, 246, 1)', // Blue
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        borderDash: [5, 5],
+                        type: 'line',
+                        order: 2
                     }
                 ];
                 
@@ -673,41 +761,13 @@
 
              // --- Chart Toggles ---
             function setupChartToggles() {
-                const toggleDaily = document.getElementById('toggle-daily');
-                const toggleTrend = document.getElementById('toggle-trend');
-                const toggleWeekly = document.getElementById('toggle-weekly');
-
-                const toggleListener = (event) => {
-                    if (!weightChart) return;
-
-                    const isChecked = event.target.checked;
-                    const id = event.target.id;
-
-                    switch (id) {
-                        case 'toggle-daily':
-                            weightChart.setDatasetVisibility(0, isChecked); // Daily Weight
-                            break;
-                        case 'toggle-trend':
-                            weightChart.setDatasetVisibility(1, isChecked); // Trend Line
-                            weightChart.setDatasetVisibility(2, isChecked); // Future Trend
-                            break;
-                        case 'toggle-weekly':
-                            weightChart.setDatasetVisibility(3, isChecked); // Weekly Average
-                            weightChart.setDatasetVisibility(4, isChecked); // Weekly Std Dev
-                            break;
-                    }
-                    weightChart.update();
-                };
-
-                toggleDaily.addEventListener('change', toggleListener);
-                toggleTrend.addEventListener('change', toggleListener);
-                toggleWeekly.addEventListener('change', toggleListener);
+                // This is now handled by the legend's onClick event
             }
 
             // --- Initial Load ---
             initializeChart();
             updateApp();
-            setupChartToggles();
+            // setupChartToggles is no longer needed
         });
     </script>
 </body>
