@@ -98,6 +98,16 @@
 </head>
 <body class="bg-slate-100 text-slate-800">
 
+    <div id="loading-overlay" class="fixed inset-0 bg-white z-[100] flex items-center justify-center">
+        <div class="flex flex-col items-center gap-4">
+            <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-slate-500">Connecting...</p>
+        </div>
+    </div>
+
     <div class="app-container">
         <!-- Header -->
         <header class="app-header bg-white shadow-md z-20">
@@ -105,6 +115,12 @@
                 <div class="flex items-center justify-between h-16">
                     <h1 id="header-title" class="text-xl font-bold text-slate-900">Weight Tracker</h1>
                     <div class="flex items-center gap-2">
+                        <button id="importButton" title="Import from CSV" class="p-2 rounded-full hover:bg-slate-100 transition text-emerald-600">
+                            <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+                        </button>
+                        <button id="exportButton" title="Export to CSV" class="p-2 rounded-full hover:bg-slate-100 transition text-slate-500">
+                            <i data-lucide="download-cloud" class="w-5 h-5"></i>
+                        </button>
                         <!-- Tab Buttons -->
                         <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
                             <button data-tab="chart-tab" class="tab-btn px-3 py-1 text-sm font-semibold rounded-md bg-white shadow-sm text-indigo-600">Chart</button>
@@ -113,9 +129,11 @@
                         <button id="reset-zoom-btn" class="p-2 rounded-full hover:bg-slate-100 transition text-slate-600">
                             <i data-lucide="zoom-out" class="w-5 h-5"></i>
                         </button>
-                        <button id="menu-btn" class="p-2 rounded-full hover:bg-slate-100 transition text-slate-600">
-                            <i data-lucide="more-vertical" class="w-5 h-5"></i>
-                        </button>
+                        <!-- New Input Box for Future Trend -->
+                        <div id="future-controls" class="items-center gap-1 sm:flex">
+                            <input type="number" id="future-days-input" value="30" min="1" max="365" class="w-14 text-center p-1 text-sm rounded-md border border-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                            <label for="future-days-input" class="text-sm font-medium text-slate-500">day trend</label>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -168,27 +186,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Menu Modal -->
-    <div id="menu-modal" class="modal fixed inset-0 bg-black bg-opacity-40 z-50 hidden items-end justify-center p-4 opacity-0">
-        <div id="menu-modal-content" class="modal-content bg-white rounded-xl shadow-2xl w-full max-w-md transform translate-y-full">
-            <div class="p-2">
-                <button id="importButton" class="w-full flex items-center gap-4 px-4 py-3 text-left text-slate-700 hover:bg-slate-100 rounded-lg transition">
-                    <i data-lucide="upload-cloud" class="w-5 h-5 text-emerald-600"></i>
-                    <span class="font-semibold">Import from CSV</span>
-                </button>
-                <button id="exportButton" class="w-full flex items-center gap-4 px-4 py-3 text-left text-slate-700 hover:bg-slate-100 rounded-lg transition">
-                    <i data-lucide="download-cloud" class="w-5 h-5 text-slate-500"></i>
-                    <span class="font-semibold">Export to CSV</span>
-                </button>
-            </div>
-            <div class="p-2 border-t border-slate-200">
-                 <button id="menu-modal-close" class="w-full flex items-center justify-center gap-4 px-4 py-3 text-left text-slate-700 hover:bg-slate-100 rounded-lg transition font-bold">
-                    Cancel
-                </button>
-            </div>
-        </div>
-    </div>
     
     <!-- Hidden file input -->
     <input type="file" id="csvFileInput" class="hidden" accept=".csv">
@@ -198,7 +195,14 @@
         <span id="toast-message"></span>
     </div>
 
-    <script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, addDoc, deleteDoc, onSnapshot, collection, query, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+
         document.addEventListener('DOMContentLoaded', () => {
             // --- Element Selectors ---
             const importButton = document.getElementById('importButton');
@@ -208,10 +212,6 @@
             const historyList = document.getElementById('history-list');
             const ctx = document.getElementById('weightChart').getContext('2d');
             const resetZoomBtn = document.getElementById('reset-zoom-btn');
-            const menuBtn = document.getElementById('menu-btn');
-            const menuModal = document.getElementById('menu-modal');
-            const menuModalContent = document.getElementById('menu-modal-content');
-            const menuModalClose = document.getElementById('menu-modal-close');
             const entryModal = document.getElementById('entry-modal');
             const entryModalContent = document.getElementById('entry-modal-content');
             const entryModalTitle = document.getElementById('entry-modal-title');
@@ -222,10 +222,85 @@
             const headerTitle = document.getElementById('header-title');
             const tabButtons = document.querySelectorAll('.tab-btn');
             const tabContents = document.querySelectorAll('.tab-content');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const futureDaysInput = document.getElementById('future-days-input');
+            const futureControls = document.getElementById('future-controls');
 
             let weightChart;
-            let currentEditDate = null;
+            let currentEditId = null; // Use Firestore document ID for editing
+            let localWeightData = []; // Local cache of Firestore data
+            let unsubscribe; // To detach Firestore listener
+
+            // --- Firebase Initialization ---
+            let db, auth, userId, appId;
+
+            async function initializeFirebase() {
+                try {
+                    // These are placeholders that will be replaced by the environment
+                    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+                    appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+                    if (!firebaseConfig.apiKey) {
+                        console.error("Firebase config is missing.");
+                        loadingOverlay.textContent = "Error: Firebase configuration is missing.";
+                        return;
+                    }
+                    
+                    setLogLevel('debug');
+                    const app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                            console.log("User is signed in with UID:", userId);
+                            setupDataListener();
+                        } else {
+                            console.log("User is not signed in. Attempting to sign in...");
+                            try {
+                                if (typeof __initial_auth_token !== 'undefined') {
+                                    await signInWithCustomToken(auth, __initial_auth_token);
+                                } else {
+                                    await signInAnonymously(auth);
+                                }
+                            } catch (error) {
+                                console.error("Error signing in:", error);
+                                loadingOverlay.textContent = "Authentication failed.";
+                            }
+                        }
+                    });
+
+                } catch (error) {
+                    console.error("Firebase initialization failed:", error);
+                    loadingOverlay.textContent = "Could not initialize the application.";
+                }
+            }
             
+            // --- Data Listener ---
+            function setupDataListener() {
+                if (unsubscribe) unsubscribe(); // Detach any old listener
+
+                const weightsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/weights`);
+                const q = query(weightsCollectionRef);
+
+                unsubscribe = onSnapshot(q, (querySnapshot) => {
+                    const data = querySnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    })).sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    localWeightData = data;
+                    updateApp(localWeightData);
+                    loadingOverlay.style.display = 'none'; // Hide loading once data is loaded
+                }, (error) => {
+                    console.error("Error fetching data from Firestore:", error);
+                    showToast("Could not load data.", "error");
+                    loadingOverlay.style.display = 'none';
+                });
+            }
+
+
             // --- Initialize UI Components ---
             lucide.createIcons();
 
@@ -254,17 +329,19 @@
 
 
             // --- Event Listeners ---
-            importButton.addEventListener('click', () => { csvFileInput.click(); closeMenuModal(); });
+            importButton.addEventListener('click', () => { csvFileInput.click(); });
             csvFileInput.addEventListener('change', handleFileUpload);
-            exportButton.addEventListener('click', () => { exportDataToCSV(); closeMenuModal(); });
+            exportButton.addEventListener('click', () => { exportDataToCSV(); });
             fabAddBtn.addEventListener('click', openAddModal);
             resetZoomBtn.addEventListener('click', () => { if (weightChart) weightChart.resetZoom(); });
-            menuBtn.addEventListener('click', openMenuModal);
-            menuModalClose.addEventListener('click', closeMenuModal);
-            menuModal.addEventListener('click', (e) => { if(e.target === menuModal) closeMenuModal(); });
             entryModalCancel.addEventListener('click', closeEntryModal);
             entryModalSave.addEventListener('click', saveEntry);
             tabButtons.forEach(button => button.addEventListener('click', switchTab));
+            futureDaysInput.addEventListener('input', () => {
+                if (localWeightData.length > 1) {
+                    plotGraph(localWeightData);
+                }
+            });
 
             // --- Tab Navigation ---
             function switchTab(event) {
@@ -281,31 +358,28 @@
                     button.classList.toggle('text-indigo-600', isSelected);
                     button.classList.toggle('text-slate-500', !isSelected);
                 });
+
+                // Show/hide future trend controls based on the active tab
+                if (tabId === 'chart-tab') {
+                    futureControls.classList.remove('hidden');
+                    futureControls.classList.add('sm:flex');
+                } else {
+                    futureControls.classList.add('hidden');
+                    futureControls.classList.remove('sm:flex');
+                }
             }
 
             // --- Modal Logic ---
-            function openMenuModal() {
-                menuModal.classList.remove('hidden');
-                setTimeout(() => {
-                    menuModal.classList.remove('opacity-0');
-                    menuModalContent.classList.remove('translate-y-full');
-                }, 10);
-            }
-            function closeMenuModal() {
-                menuModal.classList.add('opacity-0');
-                menuModalContent.classList.add('translate-y-full');
-                setTimeout(() => { menuModal.classList.add('hidden'); }, 250);
-            }
             function openAddModal() {
-                currentEditDate = null;
+                currentEditId = null;
                 entryModalTitle.textContent = 'Add New Entry';
                 entryDate.value = new Date().toISOString().split('T')[0];
                 entryWeight.value = '';
                 entryDate.disabled = false;
                 openEntryModal();
             }
-            function openEditModal(date, weight) {
-                currentEditDate = date;
+            function openEditModal(id, date, weight) {
+                currentEditId = id;
                 entryModalTitle.textContent = 'Edit Entry';
                 entryDate.value = date;
                 entryWeight.value = weight;
@@ -398,8 +472,7 @@
                 });
             }
 
-            function updateApp() {
-                const data = getData();
+            function updateApp(data) {
                 renderHistoryList(data);
                 plotGraph(data);
             }
@@ -427,10 +500,10 @@
                             <p class="text-sm text-slate-500">${formattedDate}</p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <button class="edit-btn p-2 rounded-full hover:bg-slate-100 text-slate-500" data-date="${item.date}" data-weight="${item.mass}">
+                            <button class="edit-btn p-2 rounded-full hover:bg-slate-100 text-slate-500" data-id="${item.id}" data-date="${item.date}" data-weight="${item.mass}">
                                 <i data-lucide="edit-2" class="w-4 h-4"></i>
                             </button>
-                            <button class="delete-btn p-2 rounded-full hover:bg-red-100 text-red-500" data-date="${item.date}">
+                            <button class="delete-btn p-2 rounded-full hover:bg-red-100 text-red-500" data-id="${item.id}">
                                 <i data-lucide="trash-2" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -439,20 +512,24 @@
                 });
                 lucide.createIcons();
                 historyList.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', (e) => {
-                    const { date, weight } = e.currentTarget.dataset;
-                    openEditModal(date, weight);
+                    const { id, date, weight } = e.currentTarget.dataset;
+                    openEditModal(id, date, weight);
                 }));
-                historyList.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', (e) => {
-                    const dateToDelete = e.currentTarget.dataset.date;
-                    let data = getData();
-                    data = data.filter(d => d.date !== dateToDelete);
-                    setData(data);
-                    showToast('Entry deleted!');
-                    updateApp();
+                historyList.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+                    const docIdToDelete = e.currentTarget.dataset.id;
+                    try {
+                        const docRef = doc(db, `artifacts/${appId}/users/${userId}/weights`, docIdToDelete);
+                        await deleteDoc(docRef);
+                        showToast('Entry deleted!');
+                        // Real-time listener will update the UI automatically
+                    } catch (error) {
+                        console.error("Error deleting document: ", error);
+                        showToast('Failed to delete entry.', 'error');
+                    }
                 }));
             }
             
-            function saveEntry() {
+            async function saveEntry() {
                 const date = entryDate.value;
                 const weight = parseFloat(entryWeight.value);
 
@@ -461,62 +538,57 @@
                     return;
                 }
 
-                let data = getData();
-                if (currentEditDate) { // Editing existing
-                    const index = data.findIndex(d => d.date === currentEditDate);
-                    if (index > -1) {
-                        data[index].mass = weight;
-                    }
-                } else { // Adding new
-                    // Check for duplicate date
-                    if (data.some(d => d.date === date)) {
-                        showToast('An entry for this date already exists.', 'error');
-                        return;
-                    }
-                    data.push({ date, mass: weight });
-                }
-                
-                setData(data);
-                showToast('Entry saved!');
-                updateApp();
-                closeEntryModal();
-            }
-
-            // --- Local Storage Functions ---
-            function getData() {
                 try {
-                    const data = localStorage.getItem('weightData');
-                    return data ? JSON.parse(data).sort((a, b) => new Date(a.date) - new Date(b.date)) : [];
-                } catch (e) {
-                    console.error("Failed to parse data from localStorage", e);
-                    return [];
+                    if (currentEditId) { // Editing existing
+                        const docRef = doc(db, `artifacts/${appId}/users/${userId}/weights`, currentEditId);
+                        await setDoc(docRef, { date: date, mass: weight });
+                    } else { // Adding new
+                        // Check for duplicate date
+                        if (localWeightData.some(d => d.date === date)) {
+                            showToast('An entry for this date already exists.', 'error');
+                            return;
+                        }
+                        const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/weights`);
+                        await addDoc(collectionRef, { date: date, mass: weight });
+                    }
+                    showToast('Entry saved!');
+                    closeEntryModal();
+                    // Real-time listener updates the UI
+                } catch (error) {
+                    console.error("Error saving entry: ", error);
+                    showToast('Failed to save entry.', 'error');
                 }
-            }
-
-            function setData(data) {
-                localStorage.setItem('weightData', JSON.stringify(data));
             }
 
             // --- CSV Handling ---
-            function handleFileUpload(event) {
+            async function handleFileUpload(event) {
                 const file = event.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
-                reader.onload = (e) => {
+                reader.onload = async (e) => {
                     try {
                         const importedData = parseCSV(e.target.result);
                         if (importedData.length === 0) {
                             showToast("Could not find valid data. Ensure format is 'YYYY-MM-DD,weight'.", 'error'); return;
                         }
-                        const dataMap = new Map(getData().map(d => [d.date, d.mass]));
-                        importedData.forEach(d => dataMap.set(d.date, d.mass));
-                        const mergedData = Array.from(dataMap, ([date, mass]) => ({ date, mass }));
-                        setData(mergedData);
-                        showToast(`Successfully imported and merged ${importedData.length} records.`, 'success');
-                        updateApp();
+                        
+                        // Batch write to Firestore for efficiency
+                        const batch = writeBatch(db);
+                        const weightsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/weights`);
+                        
+                        importedData.forEach(item => {
+                            // For simplicity, we'll overwrite duplicates. A more complex merge is possible.
+                            // We use the date as a document ID to enforce uniqueness.
+                            const docRef = doc(weightsCollectionRef, item.date);
+                            batch.set(docRef, { date: item.date, mass: item.mass });
+                        });
+
+                        await batch.commit();
+                        showToast(`Successfully imported ${importedData.length} records.`, 'success');
+                        // Real-time listener will update the UI
                     } catch (error) {
-                        showToast("An error occurred while parsing the file.", 'error'); 
-                        console.error("CSV Parse Error:", error);
+                        showToast("An error occurred while importing the file.", 'error'); 
+                        console.error("CSV Import Error:", error);
                     }
                 };
                 reader.readAsText(file);
@@ -539,7 +611,7 @@
             }
 
             function exportDataToCSV() {
-                const data = getData();
+                const data = localWeightData; // Use the local cache
                 if (data.length === 0) { showToast("No data to export.", 'error'); return; }
                 let csvContent = "date,mass\n";
                 data.forEach(row => { csvContent += `${row.date},${row.mass}\n`; });
@@ -601,8 +673,9 @@
                 const regressionPoints = numericalData.map(d => [d.days, d.mass]);
                 const linFit = regression.linear(regressionPoints);
 
+                const futureDays = parseInt(futureDaysInput.value, 10) || 30;
                 const lastDayOfData = days.length > 0 ? Math.max(...days) : 0;
-                const futureLimit = lastDayOfData + 30;
+                const futureLimit = lastDayOfData + futureDays;
 
                 const currentTrendPoints = days.map(day => ({ 
                     x: getDateStringFromDays(day), 
@@ -752,7 +825,7 @@
 
             // --- Initial Load ---
             initializeChart();
-            updateApp();
+            initializeFirebase();
         });
     </script>
 </body>
