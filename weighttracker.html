@@ -104,7 +104,7 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            <p class="text-slate-500">Connecting...</p>
+            <p class="text-slate-500">Loading...</p>
         </div>
     </div>
 
@@ -195,14 +195,7 @@
         <span id="toast-message"></span>
     </div>
 
-    <!-- Firebase SDKs -->
-    <script type="module">
-        // Import Firebase modules
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, addDoc, deleteDoc, onSnapshot, collection, query, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-
+    <script>
         document.addEventListener('DOMContentLoaded', () => {
             // --- Element Selectors ---
             const importButton = document.getElementById('importButton');
@@ -227,80 +220,8 @@
             const futureControls = document.getElementById('future-controls');
 
             let weightChart;
-            let currentEditId = null; // Use Firestore document ID for editing
-            let localWeightData = []; // Local cache of Firestore data
-            let unsubscribe; // To detach Firestore listener
-
-            // --- Firebase Initialization ---
-            let db, auth, userId, appId;
-
-            async function initializeFirebase() {
-                try {
-                    // These are placeholders that will be replaced by the environment
-                    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-                    appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-                    if (!firebaseConfig.apiKey) {
-                        console.error("Firebase config is missing.");
-                        loadingOverlay.textContent = "Error: Firebase configuration is missing.";
-                        return;
-                    }
-                    
-                    setLogLevel('debug');
-                    const app = initializeApp(firebaseConfig);
-                    db = getFirestore(app);
-                    auth = getAuth(app);
-
-                    onAuthStateChanged(auth, async (user) => {
-                        if (user) {
-                            userId = user.uid;
-                            console.log("User is signed in with UID:", userId);
-                            setupDataListener();
-                        } else {
-                            console.log("User is not signed in. Attempting to sign in...");
-                            try {
-                                if (typeof __initial_auth_token !== 'undefined') {
-                                    await signInWithCustomToken(auth, __initial_auth_token);
-                                } else {
-                                    await signInAnonymously(auth);
-                                }
-                            } catch (error) {
-                                console.error("Error signing in:", error);
-                                loadingOverlay.textContent = "Authentication failed.";
-                            }
-                        }
-                    });
-
-                } catch (error) {
-                    console.error("Firebase initialization failed:", error);
-                    loadingOverlay.textContent = "Could not initialize the application.";
-                }
-            }
+            let currentEditDate = null; // Use date for editing
             
-            // --- Data Listener ---
-            function setupDataListener() {
-                if (unsubscribe) unsubscribe(); // Detach any old listener
-
-                const weightsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/weights`);
-                const q = query(weightsCollectionRef);
-
-                unsubscribe = onSnapshot(q, (querySnapshot) => {
-                    const data = querySnapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    })).sort((a, b) => new Date(a.date) - new Date(b.date));
-                    
-                    localWeightData = data;
-                    updateApp(localWeightData);
-                    loadingOverlay.style.display = 'none'; // Hide loading once data is loaded
-                }, (error) => {
-                    console.error("Error fetching data from Firestore:", error);
-                    showToast("Could not load data.", "error");
-                    loadingOverlay.style.display = 'none';
-                });
-            }
-
-
             // --- Initialize UI Components ---
             lucide.createIcons();
 
@@ -338,8 +259,9 @@
             entryModalSave.addEventListener('click', saveEntry);
             tabButtons.forEach(button => button.addEventListener('click', switchTab));
             futureDaysInput.addEventListener('input', () => {
-                if (localWeightData.length > 1) {
-                    plotGraph(localWeightData);
+                const data = getData();
+                if (data.length > 1) {
+                    plotGraph(data);
                 }
             });
 
@@ -371,15 +293,15 @@
 
             // --- Modal Logic ---
             function openAddModal() {
-                currentEditId = null;
+                currentEditDate = null;
                 entryModalTitle.textContent = 'Add New Entry';
                 entryDate.value = new Date().toISOString().split('T')[0];
                 entryWeight.value = '';
                 entryDate.disabled = false;
                 openEntryModal();
             }
-            function openEditModal(id, date, weight) {
-                currentEditId = id;
+            function openEditModal(date, weight) {
+                currentEditDate = date;
                 entryModalTitle.textContent = 'Edit Entry';
                 entryDate.value = date;
                 entryWeight.value = weight;
@@ -472,7 +394,8 @@
                 });
             }
 
-            function updateApp(data) {
+            function updateApp() {
+                const data = getData();
                 renderHistoryList(data);
                 plotGraph(data);
             }
@@ -500,10 +423,10 @@
                             <p class="text-sm text-slate-500">${formattedDate}</p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <button class="edit-btn p-2 rounded-full hover:bg-slate-100 text-slate-500" data-id="${item.id}" data-date="${item.date}" data-weight="${item.mass}">
+                            <button class="edit-btn p-2 rounded-full hover:bg-slate-100 text-slate-500" data-date="${item.date}" data-weight="${item.mass}">
                                 <i data-lucide="edit-2" class="w-4 h-4"></i>
                             </button>
-                            <button class="delete-btn p-2 rounded-full hover:bg-red-100 text-red-500" data-id="${item.id}">
+                            <button class="delete-btn p-2 rounded-full hover:bg-red-100 text-red-500" data-date="${item.date}">
                                 <i data-lucide="trash-2" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -512,24 +435,20 @@
                 });
                 lucide.createIcons();
                 historyList.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', (e) => {
-                    const { id, date, weight } = e.currentTarget.dataset;
-                    openEditModal(id, date, weight);
+                    const { date, weight } = e.currentTarget.dataset;
+                    openEditModal(date, weight);
                 }));
-                historyList.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', async (e) => {
-                    const docIdToDelete = e.currentTarget.dataset.id;
-                    try {
-                        const docRef = doc(db, `artifacts/${appId}/users/${userId}/weights`, docIdToDelete);
-                        await deleteDoc(docRef);
-                        showToast('Entry deleted!');
-                        // Real-time listener will update the UI automatically
-                    } catch (error) {
-                        console.error("Error deleting document: ", error);
-                        showToast('Failed to delete entry.', 'error');
-                    }
+                historyList.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                    const dateToDelete = e.currentTarget.dataset.date;
+                    let data = getData();
+                    data = data.filter(d => d.date !== dateToDelete);
+                    setData(data);
+                    showToast('Entry deleted!');
+                    updateApp();
                 }));
             }
             
-            async function saveEntry() {
+            function saveEntry() {
                 const date = entryDate.value;
                 const weight = parseFloat(entryWeight.value);
 
@@ -538,57 +457,62 @@
                     return;
                 }
 
-                try {
-                    if (currentEditId) { // Editing existing
-                        const docRef = doc(db, `artifacts/${appId}/users/${userId}/weights`, currentEditId);
-                        await setDoc(docRef, { date: date, mass: weight });
-                    } else { // Adding new
-                        // Check for duplicate date
-                        if (localWeightData.some(d => d.date === date)) {
-                            showToast('An entry for this date already exists.', 'error');
-                            return;
-                        }
-                        const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/weights`);
-                        await addDoc(collectionRef, { date: date, mass: weight });
+                let data = getData();
+                if (currentEditDate) { // Editing existing
+                    const index = data.findIndex(d => d.date === currentEditDate);
+                    if (index > -1) {
+                        data[index].mass = weight;
                     }
-                    showToast('Entry saved!');
-                    closeEntryModal();
-                    // Real-time listener updates the UI
-                } catch (error) {
-                    console.error("Error saving entry: ", error);
-                    showToast('Failed to save entry.', 'error');
+                } else { // Adding new
+                    // Check for duplicate date
+                    if (data.some(d => d.date === date)) {
+                        showToast('An entry for this date already exists.', 'error');
+                        return;
+                    }
+                    data.push({ date, mass: weight });
+                }
+                
+                setData(data);
+                showToast('Entry saved!');
+                updateApp();
+                closeEntryModal();
+            }
+
+            // --- Local Storage Functions ---
+            function getData() {
+                try {
+                    const data = localStorage.getItem('weightData');
+                    return data ? JSON.parse(data).sort((a, b) => new Date(a.date) - new Date(b.date)) : [];
+                } catch (e) {
+                    console.error("Failed to parse data from localStorage", e);
+                    return [];
                 }
             }
 
+            function setData(data) {
+                localStorage.setItem('weightData', JSON.stringify(data));
+            }
+
             // --- CSV Handling ---
-            async function handleFileUpload(event) {
+            function handleFileUpload(event) {
                 const file = event.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
-                reader.onload = async (e) => {
+                reader.onload = (e) => {
                     try {
                         const importedData = parseCSV(e.target.result);
                         if (importedData.length === 0) {
                             showToast("Could not find valid data. Ensure format is 'YYYY-MM-DD,weight'.", 'error'); return;
                         }
-                        
-                        // Batch write to Firestore for efficiency
-                        const batch = writeBatch(db);
-                        const weightsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/weights`);
-                        
-                        importedData.forEach(item => {
-                            // For simplicity, we'll overwrite duplicates. A more complex merge is possible.
-                            // We use the date as a document ID to enforce uniqueness.
-                            const docRef = doc(weightsCollectionRef, item.date);
-                            batch.set(docRef, { date: item.date, mass: item.mass });
-                        });
-
-                        await batch.commit();
-                        showToast(`Successfully imported ${importedData.length} records.`, 'success');
-                        // Real-time listener will update the UI
+                        const dataMap = new Map(getData().map(d => [d.date, d.mass]));
+                        importedData.forEach(d => dataMap.set(d.date, d.mass));
+                        const mergedData = Array.from(dataMap, ([date, mass]) => ({ date, mass }));
+                        setData(mergedData);
+                        showToast(`Successfully imported and merged ${importedData.length} records.`, 'success');
+                        updateApp();
                     } catch (error) {
-                        showToast("An error occurred while importing the file.", 'error'); 
-                        console.error("CSV Import Error:", error);
+                        showToast("An error occurred while parsing the file.", 'error'); 
+                        console.error("CSV Parse Error:", error);
                     }
                 };
                 reader.readAsText(file);
@@ -611,7 +535,7 @@
             }
 
             function exportDataToCSV() {
-                const data = localWeightData; // Use the local cache
+                const data = getData();
                 if (data.length === 0) { showToast("No data to export.", 'error'); return; }
                 let csvContent = "date,mass\n";
                 data.forEach(row => { csvContent += `${row.date},${row.mass}\n`; });
@@ -825,7 +749,8 @@
 
             // --- Initial Load ---
             initializeChart();
-            initializeFirebase();
+            updateApp();
+            loadingOverlay.style.display = 'none';
         });
     </script>
 </body>
