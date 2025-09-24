@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Interactive Vector Playground with Zoom & Reset</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f8f8f8;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      gap: 20px;
+    }
+    svg {
+      background: #fffef7;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      border-radius: 8px;
+    }
+    .control-panel {
+      min-width: 240px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .control-panel h3 {
+      margin-top: 0;
+    }
+    .control-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<svg id="canvas" width="800" height="480"></svg>
+<div class="control-panel">
+  <h3>Vector Controls</h3>
+  <div id="vector-controls"></div>
+  <h3>Mutability</h3>
+  <div id="mutability-controls"></div>
+  <div class="control-item">
+    <button id="reset-btn">Reset Positions</button>
+  </div>
+</div>
+
+<script>
+const svg = document.getElementById('canvas');
+
+// Default positions
+const defaultState = {
+  origin: { x: 100, y: 400 },
+  lab: { r_p: { x: 100, y: 200 }, r_t: { x: 500, y: 200 } },
+  scale: 1.0
+};
+
+let origin = {...defaultState.origin};
+let lab = { r_p: {...defaultState.lab.r_p}, r_t: {...defaultState.lab.r_t} };
+let masses = { m_p: 1.0, m_t: 1.0 };
+
+let visibility = { r_p:true, r_t:true, s_p:true, s_t:true, r_mu:true, R_M:true, m_p:true, m_t:true };
+let mutable = { r_p:true, r_t:true, origin:true };
+const colors = { r_p:'#111827', r_t:'#374151', s_p:'#0369a1', s_t:'#0ea5a4', R_M:'#059669', r_mu:'#b91c1c' };
+
+let dragging = null;
+let dragOffset = {x:0, y:0};
+let scale = defaultState.scale;
+
+function toSvg(v){ return { x: origin.x + v.x * scale, y: origin.y - v.y * scale }; }
+function totalMass(){ return masses.m_p + masses.m_t; }
+function R_M(){ const tm = totalMass(); return { x:(masses.m_p*lab.r_p.x + masses.m_t*lab.r_t.x)/tm, y:(masses.m_p*lab.r_p.y + masses.m_t*lab.r_t.y)/tm }; }
+
+function clearSvg(){ while(svg.firstChild) svg.removeChild(svg.firstChild); }
+function drawLine(x1,y1,x2,y2,color='#000',width=3){ const l=document.createElementNS('http://www.w3.org/2000/svg','line'); l.setAttribute('x1',x1); l.setAttribute('y1',y1); l.setAttribute('x2',x2); l.setAttribute('y2',y2); l.setAttribute('stroke',color); l.setAttribute('stroke-width',width); svg.appendChild(l); }
+function drawArrow(x1,y1,x2,y2,color='#000'){ drawLine(x1,y1,x2,y2,color,3); const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy); if(len===0)return; const ux=dx/len, uy=dy/len, size=10; const backX=x2-ux*size, backY=y2-uy*size; const leftX=backX+uy*size*0.5, leftY=backY-ux*size*0.5; const rightX=backX-uy*size*0.5, rightY=backY+ux*size*0.5; const poly=document.createElementNS('http://www.w3.org/2000/svg','polygon'); poly.setAttribute('points',`${x2},${y2} ${leftX},${leftY} ${rightX},${rightY}`); poly.setAttribute('fill',color); svg.appendChild(poly); }
+function drawCircle(x,y,r,color='#000',opacity=1){ const c=document.createElementNS('http://www.w3.org/2000/svg','circle'); c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',r); c.setAttribute('fill',color); c.setAttribute('opacity',opacity); svg.appendChild(c); }
+function drawText(x,y,text,size=16,color='#000'){ const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('x',x); t.setAttribute('y',y); t.setAttribute('font-size',size); t.setAttribute('fill',color); t.textContent=text; svg.appendChild(t); }
+function drawAxes(x,y){ drawLine(x,y,x+40*scale,y,'gray',3); drawLine(x,y,x,y-40*scale,'gray',3); }
+
+function render(){
+  clearSvg();
+  const tip_r_p=toSvg(lab.r_p), tip_r_t=toSvg(lab.r_t), cm=toSvg(R_M());
+
+  drawCircle(origin.x,origin.y,6,'#111827'); drawAxes(origin.x,origin.y); drawText(origin.x+45,origin.y,'LAB',13);
+  drawCircle(cm.x,cm.y,6,'#059669'); drawAxes(cm.x,cm.y); drawText(cm.x,cm.y-45,'CM',13);
+  drawCircle(tip_r_t.x,tip_r_t.y,6,'#374151'); drawAxes(tip_r_t.x,tip_r_t.y); drawText(tip_r_t.x,tip_r_t.y-45,'REL',13);
+
+  if(visibility.r_p){ drawArrow(origin.x,origin.y,tip_r_p.x,tip_r_p.y,colors.r_p); drawText((origin.x+tip_r_p.x)/2,(origin.y+tip_r_p.y)/2,'rₚ',16,colors.r_p); }
+  if(visibility.r_t){ drawArrow(origin.x,origin.y,tip_r_t.x,tip_r_t.y,colors.r_t); drawText((origin.x+tip_r_t.x)/2,(origin.y+tip_r_t.y)/2,'rₜ',16,colors.r_t); }
+  if(visibility.R_M){ drawArrow(origin.x,origin.y,cm.x,cm.y,colors.R_M); drawText((origin.x+cm.x)/2,(origin.y+cm.y)/2,'Rₘ',16,colors.R_M); }
+  if(visibility.s_p){ drawArrow(cm.x,cm.y,tip_r_p.x,tip_r_p.y,colors.s_p); drawText((cm.x+tip_r_p.x)/2,(cm.y+tip_r_p.y)/2,'sₚ',16,colors.s_p); }
+  if(visibility.s_t){ drawArrow(cm.x,cm.y,tip_r_t.x,tip_r_t.y,colors.s_t); drawText((cm.x+tip_r_t.x)/2,(cm.y+tip_r_t.y)/2,'sₜ',16,colors.s_t); }
+  if(visibility.r_mu){ drawArrow(tip_r_t.x,tip_r_t.y,tip_r_p.x,tip_r_p.y,colors.r_mu); drawText((tip_r_t.x+tip_r_p.x)/2,(tip_r_t.y+tip_r_p.y)/2,'rμ',16,colors.r_mu); }
+
+  if(visibility.m_p){ drawCircle(tip_r_p.x,tip_r_p.y,12,'#fbbf24',0.7); drawText(tip_r_p.x-30,tip_r_p.y+10,'mₚ',16,'#111827'); }
+  if(visibility.m_t){ drawCircle(tip_r_t.x,tip_r_t.y,12,'#60a5fa',0.7); drawText(tip_r_t.x+12,tip_r_t.y+16,'mₜ',16,'#111827'); }
+
+  drawCircle(tip_r_p.x,tip_r_p.y,9,'transparent'); drawCircle(tip_r_t.x,tip_r_t.y,9,'transparent');
+}
+
+function setupControls(){
+  const vc=document.getElementById('vector-controls'); vc.innerHTML='';
+  Object.keys(visibility).forEach(key=>{
+    const div=document.createElement('div'); div.className='control-item';
+    const span=document.createElement('span'); span.textContent=key;
+    const btn=document.createElement('button'); btn.textContent=visibility[key]?'Hide':'Show';
+    btn.onclick=()=>{ visibility[key]=!visibility[key]; btn.textContent=visibility[key]?'Hide':'Show'; render(); };
+    div.appendChild(span); div.appendChild(btn); vc.appendChild(div);
+  });
+  const mc=document.getElementById('mutability-controls'); mc.innerHTML='';
+  Object.keys(mutable).forEach(key=>{
+    const div=document.createElement('div'); div.className='control-item';
+    const span=document.createElement('span'); span.textContent=key;
+    const btn=document.createElement('button'); btn.textContent=mutable[key]?'Lock':'Unlock';
+    btn.onclick=()=>{ mutable[key]=!mutable[key]; btn.textContent=mutable[key]?'Lock':'Unlock'; };
+    div.appendChild(span); div.appendChild(btn); mc.appendChild(div);
+  });
+
+  document.getElementById('reset-btn').onclick = () => {
+    origin = {...defaultState.origin};
+    lab = { r_p: {...defaultState.lab.r_p}, r_t: {...defaultState.lab.r_t} };
+    scale = defaultState.scale;
+    render();
+  };
+}
+
+function getMousePos(evt){ const CTM=svg.getScreenCTM(); return { x:(evt.clientX-CTM.e)/CTM.a, y:(evt.clientY-CTM.f)/CTM.d }; }
+
+svg.addEventListener('mousedown',e=>{
+  const pos=getMousePos(e);
+  const tip_r_p_pos=toSvg(lab.r_p), tip_r_t_pos=toSvg(lab.r_t);
+  if(mutable.origin && Math.hypot(pos.x-origin.x,pos.y-origin.y)<10) dragging='origin', dragOffset={x:pos.x-origin.x,y:pos.y-origin.y};
+  else if(mutable.r_p && Math.hypot(pos.x-tip_r_p_pos.x,pos.y-tip_r_p_pos.y)<10) dragging='r_p', dragOffset={x:pos.x-tip_r_p_pos.x,y:pos.y-tip_r_p_pos.y};
+  else if(mutable.r_t && Math.hypot(pos.x-tip_r_t_pos.x,pos.y-tip_r_t_pos.y)<10) dragging='r_t', dragOffset={x:pos.x-tip_r_t_pos.x,y:pos.y-tip_r_t_pos.y};
+});
+svg.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  const pos=getMousePos(e);
+  if(dragging==='origin') origin={x:pos.x-dragOffset.x,y:pos.y-dragOffset.y};
+  else if(dragging==='r_p') lab.r_p={x:(pos.x-dragOffset.x-origin.x)/scale,y:(origin.y-(pos.y-dragOffset.y))/scale};
+  else if(dragging==='r_t') lab.r_t={x:(pos.x-dragOffset.x-origin.x)/scale,y:(origin.y-(pos.y-dragOffset.y))/scale};
+  render();
+});
+svg.addEventListener('mouseup',e=>{dragging=null;});
+svg.addEventListener('mouseleave',e=>{dragging=null;});
+
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? 1.1 : 0.9;
+  scale *= delta;
+  render();
+});
+
+setupControls(); render();
+</script>
+</body>
+</html>
