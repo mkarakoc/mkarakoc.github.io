@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weight Tracker</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js for graphing -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Date adapter for Chart.js to handle time scales -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <!-- Zoom plugin for Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    
+    <!-- regression-js for trendlines -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/regression/2.0.1/regression.min.js"></script>
+    
+    <!-- Lucide Icons for UI elements -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        /* Custom font and base styles */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* --- Custom Scrollbar --- */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* --- App Layout --- */
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .app-header {
+            flex-shrink: 0;
+        }
+        .app-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding-bottom: 80px; /* Space for FAB */
+        }
+        
+        /* --- Modal Styles --- */
+        .modal {
+            transition: opacity 0.25s ease;
+        }
+        .modal-content {
+            transition: transform 0.25s ease;
+        }
+
+        /* --- Custom Toast/Alert --- */
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translate(-50%, 150%);
+            transition: transform 0.5s ease-in-out;
+            z-index: 100;
+            white-space: nowrap;
+        }
+        #toast.show {
+            transform: translate(-50%, 0);
+        }
+
+        /* --- Tab Navigation --- */
+        .tab-content {
+            display: none;
+            height: 100%;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Custom styling for drawing mode cursor */
+        #weightChart.drawing-mode {
+            cursor: crosshair;
+        }
+        /* UPDATED: Delete mode cursor */
+        #weightChart.delete-mode {
+            cursor: pointer; 
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <div id="loading-overlay" class="fixed inset-0 bg-white z-[100] flex items-center justify-center">
+        <div class="flex flex-col items-center gap-4">
+            <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-slate-500">Loading...</p>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header bg-white shadow-md z-20">
+            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <h1 id="header-title" class="text-xl font-bold text-slate-900">Weight Tracker</h1>
+                    <div class="flex items-center gap-2">
+                        <!-- Import/Export -->
+                        <button id="importButton" title="Import from CSV" class="p-2 rounded-full hover:bg-slate-100 transition text-emerald-600">
+                            <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+                        </button>
+                        <button id="exportButton" title="Export to CSV" class="p-2 rounded-full hover:bg-slate-100 transition text-slate-500">
+                            <i data-lucide="download-cloud" class="w-5 h-5"></i>
+                        </button>
+                        <!-- Tab Buttons -->
+                        <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                            <button data-tab="chart-tab" class="tab-btn px-3 py-1 text-sm font-semibold rounded-md bg-white shadow-sm text-indigo-600">Chart</button>
+                            <button data-tab="history-tab" class="tab-btn px-3 py-1 text-sm font-semibold rounded-md text-slate-500">History</button>
+                        </div>
+
+                        <!-- Draw Line Button -->
+                        <button id="draw-mode-btn" title="Draw Custom Trend Line" class="p-2 rounded-full hover:bg-slate-100 transition text-purple-600">
+                            <i data-lucide="pen-tool" class="w-5 h-5"></i>
+                        </button>
+                        <!-- New Delete Line Mode Button -->
+                        <button id="delete-mode-btn" title="Activate Delete Mode" class="p-2 rounded-full hover:bg-slate-100 transition text-red-500">
+                            <i data-lucide="scissors" class="w-5 h-5"></i>
+                        </button>
+                        <!-- Reset Zoom Button -->
+                        <button id="reset-zoom-btn" title="Reset Chart Zoom" class="p-2 rounded-full hover:bg-slate-100 transition text-slate-600">
+                            <i data-lucide="zoom-out" class="w-5 h-5"></i>
+                        </button>
+                        <!-- New Clear All Lines Button -->
+                        <button id="clear-lines-btn" title="Clear All Custom Lines" class="p-2 rounded-full hover:bg-slate-100 transition text-orange-500">
+                             <i data-lucide="eraser" class="w-5 h-5"></i>
+                        </button>
+                        
+                        <!-- New Input Box for Future Trend -->
+                        <div id="future-controls" class="items-center gap-1 sm:flex">
+                            <input type="number" id="future-days-input" value="30" min="1" max="365" class="w-14 text-center p-1 text-sm rounded-md border border-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                            <label for="future-days-input" class="text-sm font-medium text-slate-500">day trend</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content (Swappable Tabs) -->
+        <main class="app-content">
+            <!-- Chart Tab -->
+            <div id="chart-tab" class="tab-content active h-full p-4">
+                <section class="bg-white p-4 rounded-xl shadow-lg h-full flex flex-col">
+                    <div class="relative flex-grow">
+                        <canvas id="weightChart"></canvas>
+                    </div>
+                </section>
+            </div>
+
+            <!-- History Tab -->
+            <div id="history-tab" class="tab-content p-4">
+                <div id="history-list" class="space-y-3">
+                    <!-- History cards will be inserted here -->
+                </div>
+            </div>
+        </main>
+
+        <!-- Floating Action Button (FAB) -->
+        <button id="fab-add-btn" class="fixed bottom-6 right-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-4 shadow-lg transition-transform transform hover:scale-110 z-30">
+            <i data-lucide="plus" class="w-6 h-6"></i>
+        </button>
+    </div>
+
+    <!-- Add/Edit Entry Modal -->
+    <div id="entry-modal" class="modal fixed inset-0 bg-black bg-opacity-40 z-50 hidden items-center justify-center p-4 opacity-0">
+        <div id="entry-modal-content" class="modal-content bg-white rounded-xl shadow-2xl w-full max-w-sm transform scale-95">
+            <div class="p-6">
+                <h3 id="entry-modal-title" class="text-lg font-bold text-slate-800 mb-4">Add New Entry</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="entry-date" class="block text-sm font-medium text-slate-600 mb-1">Date</label>
+                        <input type="date" id="entry-date" class="w-full p-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label for="entry-weight" class="block text-sm font-medium text-slate-600 mb-1">Weight (kg)</label>
+                        <input type="number" id="entry-weight" step="0.1" placeholder="0.0" class="w-full p-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+            </div>
+            <div class="bg-slate-50 px-6 py-3 flex justify-end gap-3 rounded-b-xl">
+                <button id="entry-modal-cancel" class="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-200 font-semibold transition">Cancel</button>
+                <button id="entry-modal-save" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Hidden file input -->
+    <input type="file" id="csvFileInput" class="hidden" accept=".csv">
+
+    <!-- Custom Toast Notification -->
+    <div id="toast" class="py-3 px-5 rounded-lg shadow-lg text-white font-semibold">
+        <span id="toast-message"></span>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Element Selectors ---
+            const importButton = document.getElementById('importButton');
+            const exportButton = document.getElementById('exportButton');
+            const fabAddBtn = document.getElementById('fab-add-btn');
+            const csvFileInput = document.getElementById('csvFileInput');
+            const historyList = document.getElementById('history-list');
+            const chartCanvas = document.getElementById('weightChart');
+            const ctx = chartCanvas.getContext('2d');
+            const resetZoomBtn = document.getElementById('reset-zoom-btn');
+            const drawModeBtn = document.getElementById('draw-mode-btn');
+            const deleteModeBtn = document.getElementById('delete-mode-btn');
+            const clearLinesBtn = document.getElementById('clear-lines-btn');
+            const entryModal = document.getElementById('entry-modal');
+            const entryModalContent = document.getElementById('entry-modal-content');
+            const entryModalTitle = document.getElementById('entry-modal-title');
+            const entryModalCancel = document.getElementById('entry-modal-cancel');
+            const entryModalSave = document.getElementById('entry-modal-save');
+            const entryDate = document.getElementById('entry-date');
+            const entryWeight = document.getElementById('entry-weight');
+            const headerTitle = document.getElementById('header-title');
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const tabContents = document.querySelectorAll('.tab-content');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const futureDaysInput = document.getElementById('future-days-input');
+            const futureControls = document.getElementById('future-controls');
+
+            let weightChart;
+            let currentEditDate = null; // Use date for editing
+            
+            // New State Variables for Custom Lines
+            let isDrawingMode = false;
+            let drawingPoints = []; // Temporary storage for the two points while drawing one line
+            let isDeleteMode = false; // New state for deletion mode
+            
+            // Core state for multiple lines, persisted in local storage
+            let customTrendLines = getData('customTrendLines') || [];
+            let nextLineId = customTrendLines.length > 0 ? Math.max(...customTrendLines.map(l => l.id)) + 1 : 1;
+
+
+            // --- Custom Toast Notification (Self-contained) ---
+            const showToast = (() => {
+                let toastTimer;
+                return (message, type = 'success', duration = 3000) => {
+                    const toast = document.getElementById('toast');
+                    const toastMessage = document.getElementById('toast-message');
+                    if (!toast || !toastMessage) return;
+
+                    clearTimeout(toastTimer);
+
+                    toastMessage.textContent = message;
+                    toast.className = 'py-3 px-5 rounded-lg shadow-lg text-white font-semibold';
+                    const typeClasses = { success: 'bg-emerald-500', error: 'bg-red-500', info: 'bg-slate-700' };
+                    toast.classList.add(typeClasses[type] || typeClasses.info);
+                    
+                    toast.classList.add('show');
+                    
+                    toastTimer = setTimeout(() => {
+                        toast.classList.remove('show');
+                    }, duration);
+                };
+            })();
+
+            // --- Trend Metrics Calculation (New Function) ---
+            function calculateTrendMetrics(p1, p2) {
+                // p1 and p2 are { x: 'YYYY-MM-DD', y: mass }
+                
+                // Ensure p1 is the earlier date for correct duration/change calculation
+                const point1 = new Date(p1.x) <= new Date(p2.x) ? p1 : p2;
+                const point2 = new Date(p1.x) <= new Date(p2.x) ? p2 : p1;
+
+                const date1 = new Date(point1.x);
+                const date2 = new Date(point2.x);
+                const mass1 = point1.y;
+                const mass2 = point2.y;
+
+                // Calculate duration in days
+                const durationMs = date2.getTime() - date1.getTime();
+                const durationDays = durationMs / (1000 * 60 * 60 * 24);
+                
+                const totalChange = mass2 - mass1;
+                // Calculate rate of change in kg/day
+                const dailyRate = durationDays > 0 ? totalChange / durationDays : 0;
+
+                return {
+                    startDate: point1.x,
+                    startWeight: mass1,
+                    endDate: point2.x,
+                    endWeight: mass2,
+                    durationDays: Math.round(durationDays),
+                    totalChange: totalChange,
+                    dailyRate: dailyRate
+                };
+            }
+
+
+            // --- Event Listeners ---
+            importButton.addEventListener('click', () => { csvFileInput.click(); });
+            csvFileInput.addEventListener('change', handleFileUpload);
+            exportButton.addEventListener('click', () => { exportDataToCSV(); });
+            fabAddBtn.addEventListener('click', openAddModal);
+            
+            // Reset Zoom (Only chart zoom)
+            resetZoomBtn.addEventListener('click', () => { 
+                if (weightChart) weightChart.resetZoom(); 
+                // Ensure other modes are off
+                toggleDrawingMode(false);
+                toggleDeleteMode(false);
+                showToast('Chart zoom reset.', 'info');
+            });
+
+            // Drawing Mode Activation
+            drawModeBtn.addEventListener('click', () => { 
+                toggleDeleteMode(false); // Turn off delete mode
+                toggleDrawingMode(); 
+            });
+            
+            // Delete Mode Activation
+            deleteModeBtn.addEventListener('click', () => {
+                toggleDrawingMode(false); // Turn off drawing mode
+                toggleDeleteMode();
+            });
+            
+            // Clear All Lines
+            clearLinesBtn.addEventListener('click', clearAllCustomLines);
+
+            // Use 'mousedown' for better responsiveness on desktop, but 'click' is safer
+            // We use 'click' here because Chart.js handles the coordinate mapping on 'click'
+            chartCanvas.addEventListener('click', handleChartClick);
+
+            // --- NEW: Mouse move and Touch move listeners for rubber-band line drawing ---
+            chartCanvas.addEventListener('mousemove', handleChartMouseMove);
+            chartCanvas.addEventListener('touchmove', handleChartMouseMove, { passive: false });
+
+
+            entryModalCancel.addEventListener('click', closeEntryModal);
+            entryModalSave.addEventListener('click', saveEntry);
+            tabButtons.forEach(button => button.addEventListener('click', switchTab));
+            futureDaysInput.addEventListener('input', () => {
+                const data = getData('weightData');
+                if (data.length > 1) {
+                    plotGraph(data);
+                }
+            });
+
+
+            // --- Drawing/Delete Mode Logic ---
+
+            function setChartInteraction(enabled) {
+                if (!weightChart) return;
+                const zoomOptions = weightChart.options.plugins.zoom;
+                
+                // Set the mode for both zoom and pan
+                const mode = enabled ? 'xy' : 'none';
+                zoomOptions.zoom.mode = mode;
+                zoomOptions.pan.mode = mode;
+
+                // Re-enable/disable drag and wheel handlers
+                zoomOptions.zoom.drag.enabled = enabled;
+                zoomOptions.zoom.pinch.enabled = enabled;
+                zoomOptions.zoom.wheel.enabled = enabled;
+                zoomOptions.pan.enabled = enabled;
+                
+                // Update chart to apply new settings immediately
+                weightChart.update('none'); // 'none' skips animation
+            }
+
+            function toggleDrawingMode(forcedState = null) {
+                isDrawingMode = forcedState !== null ? forcedState : !isDrawingMode;
+                drawingPoints = []; // Reset temporary points
+                
+                drawModeBtn.classList.toggle('bg-purple-100', isDrawingMode);
+                drawModeBtn.classList.toggle('text-purple-800', isDrawingMode);
+                chartCanvas.classList.toggle('drawing-mode', isDrawingMode);
+                
+                // IMPORTANT: Disable chart interaction when drawing mode is ON
+                setChartInteraction(!isDrawingMode);
+                
+                if (isDrawingMode) {
+                    showToast('Drawing Mode ON. Click start point, then move cursor to draw line.', 'info');
+                } else {
+                    drawModeBtn.classList.remove('bg-purple-100', 'text-purple-800');
+                    if (forcedState === false) {
+                        showToast('Drawing Mode OFF. Chart controls are active.', 'info');
+                    }
+                    plotGraph(getData('weightData')); // Redraw to clear temp points if needed
+                }
+            }
+            
+            function toggleDeleteMode(forcedState = null) {
+                isDeleteMode = forcedState !== null ? forcedState : !isDeleteMode;
+                
+                deleteModeBtn.classList.toggle('bg-red-100', isDeleteMode);
+                deleteModeBtn.classList.toggle('text-red-800', isDeleteMode);
+                chartCanvas.classList.toggle('delete-mode', isDeleteMode);
+                
+                // Disable chart interaction when delete mode is ON to prevent accidental chart movements
+                setChartInteraction(!isDeleteMode);
+
+                if (isDeleteMode) {
+                    showToast('Deletion Mode ON. Click near a custom trend line point or line segment to delete it.', 'error');
+                } else {
+                    deleteModeBtn.classList.remove('bg-red-100', 'text-red-800');
+                    if (forcedState === false) {
+                       showToast('Deletion Mode OFF. Chart controls are active.', 'info');
+                    }
+                }
+                // Redraw chart to update point size and hit area
+                plotGraph(getData('weightData'));
+            }
+            
+            function getChartDataPoint(chart, event) {
+                const rect = chartCanvas.getBoundingClientRect();
+                
+                // Determine if it is a touch event or mouse event
+                // For touchmove, touches[0] is consistent.
+                const isTouchEvent = (event.touches && event.touches.length > 0) || (event.type === 'touchmove');
+                
+                // Get the coordinates from the appropriate object
+                const clientX = isTouchEvent ? event.touches[0].clientX : event.clientX;
+                const clientY = isTouchEvent ? event.touches[0].clientY : event.clientY;
+                
+                // Calculate position relative to the canvas
+                const x = clientX - rect.left;
+                const y = clientY - rect.top;
+
+                // Use Chart.js scale utility to convert pixel to data value
+                const dateValue = chart.scales.x.getValueForPixel(x);
+                const weightValue = chart.scales.y.getValueForPixel(y);
+                
+                const date = new Date(dateValue);
+                // Ensure date is consistent (important for Chart.js time scale)
+                const dateString = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                
+                return {
+                    x: dateString,
+                    y: weightValue
+                };
+            }
+
+            // --- NEW: Handle Mouse/Touch Move for live drawing ---
+            function handleChartMouseMove(event) {
+                // Only active if drawing mode is on and we have exactly one point (the start point)
+                if (!isDrawingMode || drawingPoints.length !== 1 || !weightChart) return;
+
+                // Prevent default on touchmove to stop scrolling while drawing
+                if (event.type === 'touchmove') {
+                    event.preventDefault();
+                }
+
+                const p2 = getChartDataPoint(weightChart, event);
+                const p1 = drawingPoints[0];
+
+                // Find the preview dataset and update it directly
+                const previewDataset = weightChart.data.datasets.find(d => d.label === 'Preview Line');
+                if (previewDataset) {
+                    previewDataset.data = [
+                        { x: p1.x, y: p1.y },
+                        { x: p2.x, y: p2.y }
+                    ];
+                    // Use 'none' mode for performance - no animation on every pixel move
+                    weightChart.update('none');
+                }
+            }
+            
+            function handleChartClick(event) {
+                const chart = weightChart;
+                if (!chart) return;
+
+                if (isDrawingMode) {
+                    // Chart zoom/pan is disabled via setChartInteraction(false).
+                    handleDrawingClick(chart, event);
+                    // Prevent any residual chart/browser behavior
+                    event.stopPropagation();
+                } else if (isDeleteMode) {
+                    // Handle line deletion click
+                    handleDeleteClick(chart, event);
+                    // Prevent Chart.js interaction after handling click in delete mode
+                    event.stopPropagation(); 
+                }
+            }
+            
+            function handleDrawingClick(chart, event) {
+                // Zoom/Pan is already disabled by toggleDrawingMode
+                
+                const point = getChartDataPoint(chart, event);
+                
+                if (drawingPoints.length === 0) {
+                    // First point
+                    drawingPoints.push(point);
+                    // Refresh chart to show the start point and initialize the preview line (initially defined by plotGraph)
+                    plotGraph(getData('weightData')); 
+                    showToast('Start point set. Move to draw line.', 'info', 2000);
+                } else if (drawingPoints.length === 1) {
+                    // Second point
+                    drawingPoints.push(point);
+
+                    // --- NEW: Calculate metrics before saving ---
+                    const p1 = drawingPoints[0];
+                    const p2 = drawingPoints[1];
+                    const metrics = calculateTrendMetrics(p1, p2);
+                    
+                    // Save the new custom line
+                    customTrendLines.push({
+                        id: nextLineId++,
+                        points: drawingPoints,
+                        metrics: metrics // Store metrics here
+                    });
+                    setData(customTrendLines, 'customTrendLines');
+
+                    // Auto-exit drawing mode and reset temp points
+                    drawingPoints = [];
+                    toggleDrawingMode(false);
+                    showToast('Custom trend line drawn!', 'success');
+                }
+                
+                plotGraph(getData('weightData')); // Redraw chart with the new point/line
+            }
+            
+            function handleDeleteClick(chart, event) {
+                // IMPORTANT FIX: Switched from 'index' mode to 'point' mode for better line/hitRadius detection.
+                // intersect: false means it will search for the closest element even if it's not directly under the cursor.
+                // The true at the end means useNearestElement (good for finding nearby things)
+                const elements = chart.getElementsAtEventForMode(event, 'point', { intersect: false }, true);
+                
+                // DEBUGGING STEP: Check the console to see what elements are being detected on Click:", elements);
+
+                let deleted = false;
+
+                if (elements.length > 0) {
+                    // Loop through elements to find a custom line
+                    for (const hitElement of elements) {
+                        const dataset = chart.data.datasets[hitElement.datasetIndex];
+                        const datasetLabel = dataset.label;
+                        
+                        // Check if the hit element belongs to a custom line
+                        if (datasetLabel && datasetLabel.startsWith('Custom Trend Line #')) {
+                            const lineId = dataset.lineId; // Retrieve custom property
+                            
+                            // Delete the line from the array
+                            const initialLength = customTrendLines.length;
+                            customTrendLines = customTrendLines.filter(line => line.id !== lineId);
+                            setData(customTrendLines, 'customTrendLines');
+                            
+                            if (customTrendLines.length < initialLength) {
+                                showToast(`Deleted ${datasetLabel}.`, 'error');
+                                deleted = true;
+                                break; // Exit loop after first deletion
+                            }
+                        }
+                    }
+                } 
+                
+                if (deleted) {
+                    plotGraph(getData('weightData'));
+                } else {
+                     showToast('No custom line found nearby.', 'info', 1000);
+                }
+            }
+            
+            function clearAllCustomLines() {
+                customTrendLines = [];
+                nextLineId = 1;
+                setData(customTrendLines, 'customTrendLines');
+                toggleDeleteMode(false);
+                toggleDrawingMode(false);
+                plotGraph(getData('weightData'));
+                showToast('All custom trend lines cleared.', 'info');
+            }
+
+
+            // --- Tab Navigation ---
+            function switchTab(event) {
+                const tabId = event.currentTarget.dataset.tab;
+                
+                tabContents.forEach(content => {
+                    content.classList.toggle('active', content.id === tabId);
+                });
+
+                tabButtons.forEach(button => {
+                    const isSelected = button.dataset.tab === tabId;
+                    button.classList.toggle('bg-white', isSelected);
+                    button.classList.toggle('shadow-sm', isSelected);
+                    button.classList.toggle('text-indigo-600', isSelected);
+                    button.classList.toggle('text-slate-500', !isSelected);
+                });
+
+                // Show/hide future trend controls based on the active tab
+                if (tabId === 'chart-tab') {
+                    futureControls.classList.remove('hidden');
+                    futureControls.classList.add('sm:flex');
+                    
+                    // Re-enable chart interaction when switching back to chart tab
+                    setChartInteraction(!isDrawingMode && !isDeleteMode);
+
+                } else {
+                    futureControls.classList.add('hidden');
+                    futureControls.classList.remove('sm:flex');
+                }
+            }
+
+            // --- Modal Logic ---
+            function openAddModal() {
+                currentEditDate = null;
+                entryModalTitle.textContent = 'Add New Entry';
+                entryDate.value = new Date().toISOString().split('T')[0];
+                entryWeight.value = '';
+                entryDate.disabled = false;
+                openEntryModal();
+            }
+            function openEditModal(date, weight) {
+                currentEditDate = date;
+                entryModalTitle.textContent = 'Edit Entry';
+                entryDate.value = date;
+                entryWeight.value = weight;
+                entryDate.disabled = true;
+                openEntryModal();
+            }
+            function openEntryModal() {
+                entryModal.classList.remove('hidden');
+                setTimeout(() => {
+                    entryModal.classList.remove('opacity-0');
+                    entryModalContent.classList.remove('scale-95');
+                    entryWeight.focus();
+                }, 10);
+            }
+            function closeEntryModal() {
+                entryModal.classList.add('opacity-0');
+                entryModalContent.classList.add('scale-95');
+                setTimeout(() => { entryModal.classList.add('hidden'); }, 250);
+            }
+
+            // --- Core App Functions ---
+            function initializeChart() {
+                weightChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: [], datasets: [] },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { 
+                                type: 'time', 
+                                position: 'bottom',
+                                time: {
+                                    unit: 'day',
+                                    tooltipFormat: 'MMM d, yyyy', 
+                                    displayFormats: { day: 'MMM d' }
+                                },
+                                grid: { color: '#e2e8f0' } 
+                            },
+                            y: { 
+                                position: 'left',
+                                title: { display: true, text: 'Weight (kg)' }, 
+                                grid: { color: '#e2e8f0' } 
+                            }
+                        },
+                        plugins: {
+                            legend: { 
+                                display: true,
+                                position: 'top',
+                                align: 'start',
+                                // NEW: Custom onClick to handle linked datasets (Average/StdDev, Trend/Future Trend)
+                                onClick: (e, legendItem, legend) => {
+                                    const chart = legend.chart;
+                                    const index = legendItem.datasetIndex;
+                                    const datasetLabel = chart.data.datasets[index].label;
+
+                                    // Default Chart.js toggling behavior
+                                    chart.isDatasetVisible(index) ? chart.hide(index) : chart.show(index);
+
+                                    // Helper function to toggle a linked dataset
+                                    const toggleLinkedDataset = (mainLabel, linkedLabel) => {
+                                        if (datasetLabel === mainLabel) {
+                                            const linkedIndex = chart.data.datasets.findIndex(d => d.label === linkedLabel);
+                                            if (linkedIndex !== -1) {
+                                                const newVisibility = chart.isDatasetVisible(index);
+                                                newVisibility ? chart.show(linkedIndex) : chart.hide(linkedIndex);
+                                            }
+                                        }
+                                    };
+
+                                    // Link Weekly Average and Weekly Std Dev (the error bars)
+                                    toggleLinkedDataset('Weekly Average', 'Weekly Std Dev');
+                                    // Link Trend lines and their future projections
+                                    toggleLinkedDataset('Daily Trend', 'Daily Future Trend');
+                                    toggleLinkedDataset('Weekly Trend', 'Weekly Future Trend');
+
+                                    chart.update();
+                                },
+                                labels: {
+                                    sort: (a, b) => {
+                                        const legendOrder = ['Daily Weight', 'Weekly Average', 'Daily Trend', 'Weekly Trend', 'Custom Trend Line'];
+                                        // Sort all custom lines to the end
+                                        const aText = a.text.includes('Custom Trend Line') ? 'Custom Trend Line' : a.text;
+                                        const bText = b.text.includes('Custom Trend Line') ? 'Custom Trend Line' : b.text;
+                                        return legendOrder.indexOf(aText) - legendOrder.indexOf(bText);
+                                    },
+                                    // Hide the auxiliary datasets from the legend
+                                    filter: (item) => !['Daily Future Trend', 'Weekly Std Dev', 'Weekly Future Trend'].includes(item.text)
+                                }
+                             },
+                            tooltip: { 
+                                enabled: true, 
+                                mode: 'nearest', 
+                                intersect: true, 
+                                position: 'nearest', 
+                                caretPadding: 10, 
+                                displayColors: false,
+                                callbacks: {
+                                    title: (items) => {
+                                        const dataset = items[0]?.dataset;
+                                        // Use custom line label as title
+                                        if (dataset?.metrics) {
+                                            return dataset.label;
+                                        }
+                                        // Existing title logic for regular points
+                                        return new Date(items[0].parsed.x).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                                    },
+                                    label: (item) => {
+                                        const dataset = item.dataset;
+                                        // Check if it's a custom trend line dataset and if metrics are attached
+                                        if (dataset.metrics) {
+                                            const m = dataset.metrics;
+                                            
+                                            // Format the rate of change
+                                            const changePerDay = m.dailyRate.toFixed(2);
+                                            const rateText = changePerDay >= 0 ? `+${changePerDay}` : changePerDay;
+
+                                            // Format total change
+                                            const totalChangeText = m.totalChange >= 0 ? `+${m.totalChange.toFixed(1)}` : m.totalChange.toFixed(1);
+                                            
+                                            return [
+                                                `Start: ${m.startDate} (${m.startWeight.toFixed(1)} kg)`,
+                                                `End: ${m.endDate} (${m.endWeight.toFixed(1)} kg)`,
+                                                `Duration: ${m.durationDays} days`,
+                                                `Total Change: ${totalChangeText} kg`,
+                                                `Rate: ${rateText} kg/day`
+                                            ];
+                                        }
+                                        // Existing label logic for regular points
+                                        return `${dataset.label || ''}: ${item.parsed.y.toFixed(1)} kg`;
+                                    }
+                                }
+                            },
+                            // Configured chartjs-plugin-zoom for full XY-axis interaction
+                            zoom: {
+                                zoom: { 
+                                    drag: { enabled: true }, 
+                                    mode: 'xy', // Allows zooming on both X and Y axes
+                                    pinch: { enabled: true }, // Enables pinch-to-zoom on touchscreens
+                                    wheel: { enabled: true } // Enables mouse wheel zoom
+                                },
+                                pan: { 
+                                    enabled: true, 
+                                    mode: 'xy' // Allows panning on both X and Y axes
+                                }
+                            }
+                        },
+                        interaction: { mode: 'nearest', axis: 'x', intersect: true }
+                    }
+                });
+            }
+
+            function updateApp() {
+                const data = getData('weightData');
+                renderHistoryList(data);
+                plotGraph(data);
+            }
+
+            function renderHistoryList(data) {
+                historyList.innerHTML = '';
+                if (data.length === 0) {
+                    historyList.innerHTML = `<div class="text-center p-10 text-slate-500">
+                        <i data-lucide="clipboard-list" class="w-12 h-12 mx-auto mb-2"></i>
+                        <p>No data yet.</p>
+                        <p>Tap the '+' button to add your first entry.</p>
+                    </div>`;
+                    lucide.createIcons();
+                    return;
+                }
+                data.slice().reverse().forEach(item => { // Show newest first
+                    const card = document.createElement('div');
+                    card.className = 'bg-white p-4 rounded-lg shadow-sm flex items-center justify-between';
+                    const date = new Date(item.date + 'T00:00:00'); // Ensure local timezone
+                    const formattedDate = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+                    card.innerHTML = `
+                        <div>
+                            <p class="font-semibold text-slate-800">${item.mass.toFixed(1)} kg</p>
+                            <p class="text-sm text-slate-500">${formattedDate}</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button class="edit-btn p-2 rounded-full hover:bg-slate-100 text-slate-500" data-date="${item.date}" data-weight="${item.mass}">
+                                <i data-lucide="edit-2" class="w-4 h-4"></i>
+                            </button>
+                            <button class="delete-btn p-2 rounded-full hover:bg-red-100 text-red-500" data-date="${item.date}">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    `;
+                    historyList.appendChild(card);
+                });
+                lucide.createIcons();
+                historyList.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                    const { date, weight } = e.currentTarget.dataset;
+                    openEditModal(date, weight);
+                }));
+                historyList.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                    const dateToDelete = e.currentTarget.dataset.date;
+                    let data = getData('weightData');
+                    data = data.filter(d => d.date !== dateToDelete);
+                    setData(data, 'weightData');
+                    showToast('Entry deleted!');
+                    updateApp();
+                }));
+            }
+            
+            function saveEntry() {
+                const date = entryDate.value;
+                const weight = parseFloat(entryWeight.value);
+
+                if (!date || isNaN(weight)) {
+                    showToast('Please enter a valid date and weight.', 'error');
+                    return;
+                }
+
+                let data = getData('weightData');
+                if (currentEditDate) { // Editing existing
+                    const index = data.findIndex(d => d.date === currentEditDate);
+                    if (index > -1) {
+                        data[index].mass = weight;
+                    }
+                } else { // Adding new
+                    // Check for duplicate date
+                    if (data.some(d => d.date === date)) {
+                        showToast('An entry for this date already exists.', 'error');
+                        return;
+                    }
+                    data.push({ date, mass: weight });
+                }
+                
+                setData(data, 'weightData');
+                showToast('Entry saved!');
+                updateApp();
+                closeEntryModal();
+            }
+
+            // --- Local Storage Functions (Updated for multiple keys) ---
+            function getData(key) {
+                try {
+                    const data = localStorage.getItem(key);
+                    if (key === 'weightData') {
+                        return data ? JSON.parse(data).sort((a, b) => new Date(a.date) - new Date(b.date)) : [];
+                    } else if (key === 'customTrendLines') {
+                        return data ? JSON.parse(data) : [];
+                    }
+                    return null;
+                } catch (e) {
+                    console.error(`Failed to parse ${key} from localStorage`, e);
+                    return key === 'weightData' ? [] : [];
+                }
+            }
+
+            function setData(data, key) {
+                localStorage.setItem(key, JSON.stringify(data));
+            }
+
+            // --- CSV Handling ---
+            function handleFileUpload(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const importedData = parseCSV(e.target.result);
+                        if (importedData.length === 0) {
+                            showToast("Could not find valid data. Ensure format is 'YYYY-MM-DD,weight'.", 'error'); return;
+                        }
+                        const existingData = getData('weightData');
+                        const dataMap = new Map(existingData.map(d => [d.date, d.mass]));
+                        importedData.forEach(d => dataMap.set(d.date, d.mass));
+                        const mergedData = Array.from(dataMap, ([date, mass]) => ({ date, mass }));
+                        setData(mergedData, 'weightData');
+                        showToast(`Successfully imported and merged ${importedData.length} records.`, 'success');
+                        updateApp();
+                    } catch (error) {
+                        showToast("An error occurred while parsing the file.", 'error'); 
+                        console.error("CSV Parse Error:", error);
+                    }
+                };
+                reader.readAsText(file);
+                csvFileInput.value = '';
+            }
+
+            function parseCSV(text) {
+                const data = [];
+                const lines = text.split(/\r\n|\n/);
+                const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                lines.forEach(line => {
+                    const parts = line.split(',');
+                    if (parts.length === 2) {
+                        const date = parts[0].trim();
+                        const mass = parseFloat(parts[1].trim());
+                        if (dateRegex.test(date) && dateRegex.test(date) && !isNaN(mass)) data.push({ date, mass });
+                    }
+                    // Handle case where user might use a different separator or header
+                    else if (lines.indexOf(line) > 0 && line.trim()) {
+                         console.warn("Skipping line due to invalid format:", line);
+                    }
+                });
+                return data;
+            }
+
+            function exportDataToCSV() {
+                const data = getData('weightData');
+                if (data.length === 0) { showToast("No data to export.", 'error'); return; }
+                let csvContent = "date,mass\n";
+                data.forEach(row => { csvContent += `${row.date},${row.mass.toFixed(1)}\n`; });
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", "weight_data_export.csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            // --- Calculation Helper ---
+            function calculateStandardDeviation(array) {
+                if (array.length < 2) return 0;
+                const n = array.length;
+                const mean = array.reduce((a, b) => a + b) / n;
+                const variance = array.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1);
+                return Math.sqrt(variance);
+            }
+
+            // --- Graph Plotting (Modified) ---
+            function plotGraph(data) {
+                if (!weightChart) initializeChart();
+
+                if (!data || data.length < 2) {
+                    weightChart.data.labels = [];
+                    weightChart.data.datasets = [];
+                    if (!weightChart.options.plugins.title) weightChart.options.plugins.title = {};
+                    weightChart.options.plugins.title = {
+                        display: true,
+                        text: 'Enter at least two data points to see the graph.',
+                        color: '#64748b',
+                        font: { size: 16 }
+                    };
+                    weightChart.update();
+                    return;
+                }
+                
+                if (weightChart.options.plugins.title) weightChart.options.plugins.title.display = false;
+                
+                const startDate = new Date(data[0].date);
+
+                function getDateStringFromDays(days) {
+                    const newDate = new Date(startDate);
+                    newDate.setDate(newDate.getDate() + days);
+                    return newDate.toISOString().split('T')[0];
+                }
+
+                const plotData = data.map(d => ({ x: d.date, y: d.mass }));
+
+                const numericalData = data.map(d => ({ 
+                    days: Math.round((new Date(d.date) - startDate) / (1000 * 60 * 60 * 24)), 
+                    mass: d.mass 
+                }));
+                
+                const days = numericalData.map(d => d.days);
+                const regressionPoints = numericalData.map(d => [d.days, d.mass]);
+                const linFit = regression.linear(regressionPoints);
+
+                const futureDays = parseInt(futureDaysInput.value, 10) || 30;
+                const lastDayOfData = days.length > 0 ? Math.max(...days) : 0;
+                const futureLimit = lastDayOfData + futureDays;
+
+                const currentTrendPoints = days.map(day => ({ 
+                    x: getDateStringFromDays(day), 
+                    y: linFit.predict(day)[1] 
+                }));
+                
+                const lastTrendPoint = { 
+                    x: getDateStringFromDays(lastDayOfData), 
+                    y: linFit.predict(lastDayOfData)[1] 
+                };
+
+                const futureTrendPoints = [lastTrendPoint];
+                for (let i = lastDayOfData + 1; i <= futureLimit; i++) {
+                    futureTrendPoints.push({ x: getDateStringFromDays(i), y: linFit.predict(i)[1] });
+                }
+
+                // --- Weekly Average & Stdev Logic ---
+                const weeklyData = {};
+                numericalData.forEach(d => {
+                    const weekIndex = Math.floor(d.days / 7);
+                    if (!weeklyData[weekIndex]) {
+                        weeklyData[weekIndex] = { days: [], masses: [] };
+                    }
+                    weeklyData[weekIndex].days.push(d.days);
+                    weeklyData[weekIndex].masses.push(d.mass);
+                });
+
+                const weeklyAveragePoints = [];
+                const weeklyErrorBars = [];
+                const weeklyRegressionPoints = [];
+                Object.keys(weeklyData).forEach(weekIndexStr => {
+                    const weekIndex = parseInt(weekIndexStr);
+                    const week = weeklyData[weekIndex];
+                    if (week.masses.length === 0) return;
+                    
+                    const avgMass = week.masses.reduce((a, b) => a + b, 0) / week.masses.length;
+                    const stdDev = calculateStandardDeviation(week.masses);
+                    
+                    const lastDayOfWeek = (weekIndex * 7) + 6;
+                    const lastDateStr = getDateStringFromDays(lastDayOfWeek);
+
+                    weeklyAveragePoints.push({ x: lastDateStr, y: avgMass });
+                    weeklyErrorBars.push({ x: lastDateStr, y: [avgMass - stdDev, avgMass + stdDev] });
+                    weeklyRegressionPoints.push([lastDayOfWeek, avgMass]);
+                });
+                // --- End Weekly Logic ---
+
+                // --- Weekly Trend Calculation ---
+                const weeklyLinFit = regression.linear(weeklyRegressionPoints);
+                const weeklyCurrentTrendPoints = days.map(day => ({
+                    x: getDateStringFromDays(day),
+                    y: weeklyLinFit.predict(day)[1]
+                }));
+                const weeklyLastTrendPoint = {
+                    x: getDateStringFromDays(lastDayOfData),
+                    y: weeklyLinFit.predict(lastDayOfData)[1]
+                };
+                const weeklyFutureTrendPoints = [weeklyLastTrendPoint];
+                for (let i = lastDayOfData + 1; i <= futureLimit; i++) {
+                    weeklyFutureTrendPoints.push({ x: getDateStringFromDays(i), y: weeklyLinFit.predict(i)[1] });
+                }
+                // --- End Weekly Trend Calculation ---
+
+                const datasets = [
+                    {
+                        label: 'Daily Weight',
+                        data: plotData,
+                        borderColor: 'rgba(0, 0, 0, 0.3)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        pointBackgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        borderWidth: 1,
+                        borderDash: [5, 5],
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        type: 'line',
+                        order: 5
+                    },
+                    {
+                        label: 'Daily Trend',
+                        data: currentTrendPoints,
+                        borderColor: 'rgba(217, 70, 239, 1)', // Magenta
+                        backgroundColor: 'rgba(217, 70, 239, 1)', // Magenta
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        type: 'line',
+                        order: 0
+                    },
+                    {
+                        label: 'Daily Future Trend',
+                        data: futureTrendPoints,
+                        borderColor: 'rgba(217, 70, 239, 1)', // Magenta
+                        backgroundColor: 'rgba(217, 70, 239, 1)', // Magenta
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        borderDash: [5, 5],
+                        type: 'line',
+                        order: 1
+                    },
+                    {
+                        label: 'Weekly Average',
+                        data: weeklyAveragePoints,
+                        backgroundColor: 'rgba(255, 0, 0, 0.5)',
+                        borderColor: 'rgba(255, 0, 0, 0.5)',
+                        borderWidth: 2,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        type: 'scatter',
+                        order: 3,
+                    },
+                    {
+                        label: 'Weekly Std Dev',
+                        data: weeklyErrorBars,
+                        backgroundColor: 'rgba(255, 0, 0, 0.5)',
+                        borderColor: 'rgba(255, 0, 0, 0.5)',
+                        borderWidth: { top: 3, bottom: 3, left: 0, right: 0 },
+                        borderSkipped: false,
+                        barPercentage: 0.2,
+                        type: 'bar',
+                        order: 4,
+                    },
+                    {
+                        label: 'Weekly Trend',
+                        data: weeklyCurrentTrendPoints,
+                        backgroundColor: 'rgba(59, 130, 246, 1)', // Blue
+                        borderColor: 'rgba(59, 130, 246, 1)', // Blue
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        type: 'line',
+                        order: 2
+                    },
+                    {
+                        label: 'Weekly Future Trend',
+                        data: weeklyFutureTrendPoints,
+                        borderColor: 'rgba(59, 130, 246, 1)', // Blue
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        borderDash: [5, 5],
+                        type: 'line',
+                        order: 2
+                    }
+                ];
+                
+                // --- Temporary Drawing Point Dataset (if in drawing mode) ---
+                if (isDrawingMode && drawingPoints.length === 1) {
+                     datasets.push({
+                        label: 'Drawing Point',
+                        data: [{ x: drawingPoints[0].x, y: drawingPoints[0].y }],
+                        borderColor: 'rgba(124, 58, 237, 0.5)', 
+                        pointRadius: 8,
+                        pointBackgroundColor: 'rgba(124, 58, 237, 1)',
+                        pointBorderColor: 'white',
+                        pointBorderWidth: 2,
+                        type: 'scatter',
+                        order: 0
+                    });
+                }
+                
+                // --- NEW: Preview Line Dataset (Dashed line following cursor) ---
+                if (isDrawingMode) {
+                     datasets.push({
+                        label: 'Preview Line',
+                        data: [], // Starts empty, updated in mousemove listener
+                        borderColor: 'rgba(147, 51, 234, 0.8)', // Purple
+                        borderWidth: 2,
+                        borderDash: [6, 6], // Dashed style
+                        pointRadius: 0,
+                        type: 'line',
+                        order: -1 // Render on top
+                    });
+                }
+
+                // --- Custom Trend Lines Datasets (Loop over all saved lines) ---
+                customTrendLines.forEach((line) => {
+                    const customLineData = line.points.map(p => ({ x: p.x, y: p.y }));
+                    
+                    // MODIFIED: pointRadius is now always 8 (the size used in delete mode) for visibility.
+                    const pointRadius = 8; // Always visible at size 8, as requested
+                    const pointHitRadius = isDeleteMode ? 30 : 10; // Large hit area for deletion, smaller for normal hover
+                    
+                    // HitRadius on the line segment itself (always wide enough for line detection)
+                    const hitRadius = isDeleteMode ? 30 : 10; 
+
+                    datasets.push({
+                        label: `Custom Trend Line #${line.id}`,
+                        data: customLineData,
+                        borderColor: 'rgba(124, 58, 237, 1)', // Violet for all
+                        backgroundColor: 'rgba(124, 58, 237, 1)',
+                        borderWidth: 3,
+                        pointRadius: pointRadius,
+                        pointHitRadius: pointHitRadius, 
+                        hitRadius: hitRadius, 
+                        pointBackgroundColor: 'rgba(124, 58, 237, 1)',
+                        pointBorderColor: 'white',
+                        pointBorderWidth: 2,
+                        type: 'line',
+                        fill: false,
+                        lineId: line.id, // Custom property to identify line for deletion
+                        metrics: line.metrics, // ATTACH METRICS FOR TOOLTIP
+                        order: 0 // Draw on top
+                    });
+                });
+
+
+                weightChart.data.labels = [];
+                weightChart.data.datasets = datasets;
+                weightChart.options.scales.x.max = getDateStringFromDays(futureLimit);
+                weightChart.update();
+            }
+
+            // --- Initial Load ---
+            // Load custom lines on startup
+            customTrendLines = getData('customTrendLines'); 
+            nextLineId = customTrendLines.length > 0 ? Math.max(...customTrendLines.map(l => l.id)) + 1 : 1;
+
+            initializeChart();
+            updateApp();
+            loadingOverlay.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
