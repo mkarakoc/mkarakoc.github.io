@@ -352,6 +352,11 @@
             // We use 'click' here because Chart.js handles the coordinate mapping on 'click'
             chartCanvas.addEventListener('click', handleChartClick);
 
+            // --- NEW: Mouse move and Touch move listeners for rubber-band line drawing ---
+            chartCanvas.addEventListener('mousemove', handleChartMouseMove);
+            chartCanvas.addEventListener('touchmove', handleChartMouseMove, { passive: false });
+
+
             entryModalCancel.addEventListener('click', closeEntryModal);
             entryModalSave.addEventListener('click', saveEntry);
             tabButtons.forEach(button => button.addEventListener('click', switchTab));
@@ -396,7 +401,7 @@
                 setChartInteraction(!isDrawingMode);
                 
                 if (isDrawingMode) {
-                    showToast('Drawing Mode ON. Click two points on the chart to set your custom trend line.', 'info');
+                    showToast('Drawing Mode ON. Click start point, then move cursor to draw line.', 'info');
                 } else {
                     drawModeBtn.classList.remove('bg-purple-100', 'text-purple-800');
                     if (forcedState === false) {
@@ -432,7 +437,8 @@
                 const rect = chartCanvas.getBoundingClientRect();
                 
                 // Determine if it is a touch event or mouse event
-                const isTouchEvent = event.touches && event.touches.length > 0;
+                // For touchmove, touches[0] is consistent.
+                const isTouchEvent = (event.touches && event.touches.length > 0) || (event.type === 'touchmove');
                 
                 // Get the coordinates from the appropriate object
                 const clientX = isTouchEvent ? event.touches[0].clientX : event.clientX;
@@ -454,6 +460,31 @@
                     x: dateString,
                     y: weightValue
                 };
+            }
+
+            // --- NEW: Handle Mouse/Touch Move for live drawing ---
+            function handleChartMouseMove(event) {
+                // Only active if drawing mode is on and we have exactly one point (the start point)
+                if (!isDrawingMode || drawingPoints.length !== 1 || !weightChart) return;
+
+                // Prevent default on touchmove to stop scrolling while drawing
+                if (event.type === 'touchmove') {
+                    event.preventDefault();
+                }
+
+                const p2 = getChartDataPoint(weightChart, event);
+                const p1 = drawingPoints[0];
+
+                // Find the preview dataset and update it directly
+                const previewDataset = weightChart.data.datasets.find(d => d.label === 'Preview Line');
+                if (previewDataset) {
+                    previewDataset.data = [
+                        { x: p1.x, y: p1.y },
+                        { x: p2.x, y: p2.y }
+                    ];
+                    // Use 'none' mode for performance - no animation on every pixel move
+                    weightChart.update('none');
+                }
             }
             
             function handleChartClick(event) {
@@ -481,7 +512,9 @@
                 if (drawingPoints.length === 0) {
                     // First point
                     drawingPoints.push(point);
-                    showToast('First point set. Click a second point to draw the line.', 'info', 2000);
+                    // Refresh chart to show the start point and initialize the preview line (initially defined by plotGraph)
+                    plotGraph(getData('weightData')); 
+                    showToast('Start point set. Move to draw line.', 'info', 2000);
                 } else if (drawingPoints.length === 1) {
                     // Second point
                     drawingPoints.push(point);
@@ -1123,6 +1156,20 @@
                         pointBorderWidth: 2,
                         type: 'scatter',
                         order: 0
+                    });
+                }
+                
+                // --- NEW: Preview Line Dataset (Dashed line following cursor) ---
+                if (isDrawingMode) {
+                     datasets.push({
+                        label: 'Preview Line',
+                        data: [], // Starts empty, updated in mousemove listener
+                        borderColor: 'rgba(147, 51, 234, 0.8)', // Purple
+                        borderWidth: 2,
+                        borderDash: [6, 6], // Dashed style
+                        pointRadius: 0,
+                        type: 'line',
+                        order: -1 // Render on top
                     });
                 }
 
